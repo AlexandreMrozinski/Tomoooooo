@@ -1,6 +1,5 @@
 // =============================
-//  TML W2 2026 — Vote App v2
-//  Vue timetable + 3 niveaux
+//  TML W2 2026 — Vote App v3
 // =============================
 
 const SUPABASE_URL = 'https://swyyjvutelcdixwsueta.supabase.co';
@@ -29,7 +28,7 @@ const db = {
 // --- State ---
 let state = {
   users: JSON.parse(localStorage.getItem('tml_users') || '[]'),
-  votes: {}, // { "user:artistId": voteLevel (1,2,3) }
+  votes: {},
   currentUser: null,
   currentView: 'timetable',
   timetableDay: 1,
@@ -47,40 +46,45 @@ async function loadVotes() {
     if (Array.isArray(rows)) {
       rows.forEach(r => {
         state.votes[`${r.user_name}:${r.artist_id}`] = r.vote_level;
-        if (!state.users.includes(r.user_name)) {
-          state.users.push(r.user_name);
-          saveUsers();
-        }
+        if (!state.users.includes(r.user_name)) { state.users.push(r.user_name); saveUsers(); }
       });
     }
   } catch(e) { console.error(e); }
   showLoader(false);
 }
 
-function getMyVote(artistId) {
-  return state.votes[`${state.currentUser}:${artistId}`] || null;
-}
+function getMyVote(artistId) { return state.votes[`${state.currentUser}:${artistId}`] || null; }
 
-function getTotalVotesForArtist(artistId) {
-  const counts = { 1: 0, 2: 0, 3: 0 };
+function getVotersForArtist(artistId) {
+  const result = { 1: [], 2: [], 3: [] };
   state.users.forEach(u => {
     const v = state.votes[`${u}:${artistId}`];
-    if (v) counts[v]++;
+    if (v) result[v].push(u);
   });
-  return counts;
+  return result;
 }
 
+function getTotalScore(artistId) {
+  const POINTS = { 1: 3, 2: 2, 3: 1 };
+  let score = 0;
+  state.users.forEach(u => { const v = state.votes[`${u}:${artistId}`]; if (v) score += POINTS[v]; });
+  return score;
+}
+
+// FIX bug premier vote: update state BEFORE re-rendering
 async function setVote(artistId, level) {
   if (!state.currentUser) return;
   const key = `${state.currentUser}:${artistId}`;
   const current = state.votes[key] || null;
-
-  // Toggle: same level = remove vote
   if (current === level) {
     delete state.votes[key];
+    renderTimetable();
+    openVoteModal(artistId);
     await db.delete(`votes?user_name=eq.${encodeURIComponent(state.currentUser)}&artist_id=eq.${artistId}`);
   } else {
     state.votes[key] = level;
+    renderTimetable();
+    openVoteModal(artistId);
     await db.post('votes', { user_name: state.currentUser, artist_id: artistId, vote_level: level });
   }
 }
@@ -113,11 +117,11 @@ function renderUserList() {
     return;
   }
   el.innerHTML = state.users.map(u => {
-    const myVotes = Object.entries(state.votes).filter(([k]) => k.startsWith(u+':')).length;
+    const count = Object.keys(state.votes).filter(k => k.startsWith(u+':')).length;
     return `<button class="user-btn" onclick="selectUser('${u}')">
       <span class="user-avatar">${u[0].toUpperCase()}</span>
       <span class="user-name">${u}</span>
-      <span class="user-votes">${myVotes} votes</span>
+      <span class="user-votes">${count} votes</span>
     </button>`;
   }).join('');
 }
@@ -142,10 +146,8 @@ document.getElementById('new-user-input').addEventListener('keydown', e => {
   if (e.key === 'Enter') document.getElementById('add-user-btn').click();
 });
 document.getElementById('logout-btn').onclick = () => {
-  stopPolling();
-  state.currentUser = null;
-  showScreen('login');
-  loadVotes().then(renderUserList);
+  stopPolling(); state.currentUser = null;
+  showScreen('login'); loadVotes().then(renderUserList);
 };
 
 // --- Polling ---
@@ -172,16 +174,10 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
   };
 });
 
-document.getElementById('logout-btn').onclick = () => {
-  stopPolling(); state.currentUser = null;
-  showScreen('login'); loadVotes().then(renderUserList);
-};
-
 // ══════════════════════════════════════
-//  TIMETABLE VIEW
+//  TIMETABLE
 // ══════════════════════════════════════
 
-// Day tabs
 document.querySelectorAll('.day-tab').forEach(btn => {
   btn.onclick = () => {
     document.querySelectorAll('.day-tab').forEach(b => b.classList.remove('active'));
@@ -193,78 +189,93 @@ document.querySelectorAll('.day-tab').forEach(btn => {
 
 function timeToMinutes(t) {
   const [h, m] = t.split(':').map(Number);
-  // after midnight => add 24h
   return (h < 10 ? h + 24 : h) * 60 + m;
 }
+
+function formatMin(totalMin) {
+  const h = Math.floor(totalMin / 60) % 24;
+  const m = totalMin % 60;
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+}
+
+const SLOT_W = 130;   // px per 30min
+const ROW_H  = 78;    // px per row
+const LABEL_W = 0;    // label is separate sticky column now
 
 function renderTimetable() {
   const day = state.timetableDay;
   const slots = TIMETABLE.filter(s => s.day === day);
   const stages = STAGES_ORDER.filter(s => slots.some(sl => sl.stage === s));
 
-  // Time range for this day
   const allStarts = slots.map(s => timeToMinutes(s.time));
-  const allEnds = slots.map(s => timeToMinutes(s.time) + s.duration);
-  const minTime = Math.min(...allStarts);
-  const maxTime = Math.max(...allEnds);
+  const allEnds   = slots.map(s => timeToMinutes(s.time) + s.duration);
+  const minTime   = Math.min(...allStarts);
+  const maxTime   = Math.max(...allEnds);
+  const totalCols = Math.ceil((maxTime - minTime) / 30);
 
-  // Grid: 1 col per 30min, header + stage rows
-  const SLOT_W = 120; // px per 30min
-  const ROW_H = 72;
-  const LABEL_W = 140;
-  const totalMinutes = maxTime - minTime;
-  const totalWidth = LABEL_W + (totalMinutes / 30) * SLOT_W;
-
-  // Build time headers
-  let headers = '<div class="tt-corner"></div>';
-  for (let t = minTime; t < maxTime; t += 30) {
-    const h = Math.floor(t / 60) % 24;
-    const m = t % 60;
-    headers += `<div class="tt-timecell">${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}</div>`;
+  // Time header cells
+  let headerCells = '';
+  for (let i = 0; i < totalCols; i++) {
+    const t = minTime + i * 30;
+    headerCells += `<div class="tt-hcell">${formatMin(t)}</div>`;
   }
 
-  // Build rows
-  let rows = '';
+  // Stage rows
+  let bodyRows = '';
   stages.forEach(stage => {
     const color = STAGE_COLORS[stage] || '#888';
     const stageSlots = slots.filter(s => s.stage === stage);
-    let cells = `<div class="tt-stage-label" style="--c:${color}"><span>${stage}</span></div>`;
-    cells += `<div class="tt-row-inner" style="width:${totalWidth - LABEL_W}px;position:relative;height:${ROW_H}px;">`;
+
+    let slotHtml = '';
     stageSlots.forEach(slot => {
-      const startMin = timeToMinutes(slot.time) - minTime;
-      const left = (startMin / 30) * SLOT_W;
-      const width = (slot.duration / 30) * SLOT_W - 4;
+      const startCol = (timeToMinutes(slot.time) - minTime) / 30;
+      const spanCols = slot.duration / 30;
+      const left = startCol * SLOT_W;
+      const width = spanCols * SLOT_W - 6;
       const myVote = getMyVote(slot.id);
-      const counts = getTotalVotesForArtist(slot.id);
-      const totalVotes = counts[1] + counts[2] + counts[3];
-      const voteClass = myVote ? `voted voted-${myVote}` : '';
+      const voters = getVotersForArtist(slot.id);
+      const totalVoters = voters[1].length + voters[2].length + voters[3].length;
       const voteColor = myVote ? VOTE_LEVELS[myVote-1].color : color;
 
-      let dotHtml = '';
-      if (totalVotes > 0) {
-        dotHtml = VOTE_LEVELS.map(vl => counts[vl.value] > 0
-          ? `<span class="vdot" style="background:${vl.color}" title="${vl.label}: ${counts[vl.value]}">${counts[vl.value]}</span>`
-          : ''
-        ).join('');
-      }
+      // Dots showing group votes
+      const dots = VOTE_LEVELS.map(vl =>
+        voters[vl.value].map(u =>
+          `<span class="sdot" style="background:${vl.color}" title="${u}: ${vl.label}"></span>`
+        ).join('')
+      ).join('');
 
-      cells += `<div class="tt-slot ${voteClass}" 
-        style="left:${left}px;width:${width}px;--c:${color};--vc:${voteColor}"
-        data-id="${slot.id}" onclick="openVoteModal(${slot.id})">
-        <div class="tt-slot-name">${slot.name}</div>
-        <div class="tt-slot-time">${slot.time}</div>
-        ${dotHtml ? `<div class="tt-slot-dots">${dotHtml}</div>` : ''}
-        ${myVote ? `<div class="tt-my-vote">${VOTE_LEVELS[myVote-1].emoji}</div>` : ''}
-      </div>`;
+      slotHtml += `
+        <div class="tt-slot ${myVote ? 'voted v'+myVote : ''}"
+          style="left:${left}px;width:${width}px;--c:${color};--vc:${voteColor};height:${ROW_H-8}px;top:4px"
+          onclick="openVoteModal(${slot.id})">
+          <div class="tt-slot-inner">
+            <div class="tt-sname">${slot.name}</div>
+            <div class="tt-stime">${slot.time}–${formatMin(timeToMinutes(slot.time)+slot.duration)}</div>
+            ${totalVoters > 0 ? `<div class="tt-dots">${dots}</div>` : ''}
+          </div>
+          ${myVote ? `<div class="tt-myvote">${VOTE_LEVELS[myVote-1].emoji}</div>` : ''}
+        </div>`;
     });
-    cells += '</div>';
-    rows += `<div class="tt-row">${cells}</div>`;
+
+    bodyRows += `
+      <div class="tt-row">
+        <div class="tt-slabel" style="--c:${color}">${stage}</div>
+        <div class="tt-rowcells" style="width:${totalCols * SLOT_W}px;height:${ROW_H}px;position:relative;">
+          ${slotHtml}
+        </div>
+      </div>`;
   });
 
   document.getElementById('timetable-grid').innerHTML = `
-    <div class="tt-header" style="padding-left:${LABEL_W}px">${headers}</div>
-    <div class="tt-body">${rows}</div>
-  `;
+    <div class="tt-table">
+      <div class="tt-head-row">
+        <div class="tt-slabel tt-corner">Scène</div>
+        <div class="tt-head-scroll" style="width:${totalCols * SLOT_W}px">
+          ${headerCells}
+        </div>
+      </div>
+      ${bodyRows}
+    </div>`;
 }
 
 // ── Vote Modal ──
@@ -272,52 +283,44 @@ function openVoteModal(artistId) {
   const slot = TIMETABLE.find(s => s.id === artistId);
   if (!slot) return;
   const myVote = getMyVote(artistId);
-  const counts = getTotalVotesForArtist(artistId);
+  const voters = getVotersForArtist(artistId);
   const color = STAGE_COLORS[slot.stage] || '#888';
 
-  const votersHtml = VOTE_LEVELS.map(vl => {
-    const voters = state.users.filter(u => state.votes[`${u}:${artistId}`] === vl.value);
-    return voters.length ? `<div class="modal-voter-row"><span>${vl.emoji} ${vl.label}</span><span class="modal-voter-names">${voters.join(', ')}</span></div>` : '';
+  const voterRows = VOTE_LEVELS.map(vl => {
+    if (!voters[vl.value].length) return '';
+    return `<div class="modal-vrow">
+      <span class="modal-vemoji">${vl.emoji}</span>
+      <span class="modal-vnames">${voters[vl.value].join(', ')}</span>
+    </div>`;
   }).join('');
 
   document.getElementById('modal-overlay').innerHTML = `
     <div class="modal" onclick="event.stopPropagation()">
       <div class="modal-stage" style="color:${color}">${slot.stage}</div>
       <div class="modal-name">${slot.name}</div>
-      <div class="modal-time">${DAY_LABELS[slot.day]} · ${slot.time} → ${endTime(slot)}</div>
-      <div class="modal-votes">
-        ${VOTE_LEVELS.map(vl => `
-          <button class="modal-vote-btn ${myVote === vl.value ? 'active' : ''}" 
-            style="--vc:${vl.color}" onclick="modalVote(${artistId}, ${vl.value})">
-            <span class="mvb-emoji">${vl.emoji}</span>
-            <span class="mvb-label">${vl.label}</span>
-            <span class="mvb-count">${counts[vl.value] || 0}</span>
-          </button>`).join('')}
+      <div class="modal-time">${DAY_LABELS[slot.day]} · ${slot.time} → ${formatMin(timeToMinutes(slot.time)+slot.duration)}</div>
+      <div class="modal-btns">
+        ${VOTE_LEVELS.map(vl => {
+          const count = voters[vl.value].length;
+          return `<button class="mvbtn ${myVote === vl.value ? 'active' : ''}"
+            style="--vc:${vl.color}" onclick="setVote(${artistId}, ${vl.value})">
+            <span class="mvbtn-emoji">${vl.emoji}</span>
+            <span class="mvbtn-label">${vl.label}</span>
+            ${count > 0 ? `<span class="mvbtn-count">${count}</span>` : ''}
+          </button>`;
+        }).join('')}
       </div>
-      ${votersHtml ? `<div class="modal-voters">${votersHtml}</div>` : ''}
-      <button class="modal-close" onclick="closeModal()">✕ Fermer</button>
+      ${voterRows ? `<div class="modal-voters">${voterRows}</div>` : ''}
+      <button class="modal-close" onclick="closeModal()">Fermer</button>
     </div>`;
   document.getElementById('modal-overlay').classList.add('active');
-}
-
-function endTime(slot) {
-  const total = timeToMinutes(slot.time) + slot.duration;
-  const h = Math.floor(total / 60) % 24;
-  const m = total % 60;
-  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
-}
-
-async function modalVote(artistId, level) {
-  await setVote(artistId, level);
-  openVoteModal(artistId); // refresh modal
-  renderTimetable();
 }
 
 function closeModal() { document.getElementById('modal-overlay').classList.remove('active'); }
 document.getElementById('modal-overlay').onclick = closeModal;
 
 // ══════════════════════════════════════
-//  RESULTS VIEW
+//  RESULTS — Timeline avec votes visibles
 // ══════════════════════════════════════
 
 document.querySelectorAll('.rtab').forEach(btn => {
@@ -340,50 +343,116 @@ function renderParticipantChips() {
 
 function renderResults() {
   renderParticipantChips();
-  const list = document.getElementById('results-list');
 
-  const filtered = TIMETABLE.filter(s => state.resultsDay === 'all' || s.day === state.resultsDay);
-
-  // Score: prio=3pts, si dispo=2pts, pourquoi pas=1pt
   const POINTS = { 1: 3, 2: 2, 3: 1 };
-  const scored = filtered.map(s => {
-    let score = 0;
-    const counts = { 1: 0, 2: 0, 3: 0 };
-    state.users.forEach(u => {
-      const v = state.votes[`${u}:${s.id}`];
-      if (v) { score += POINTS[v]; counts[v]++; }
+  const daysToShow = state.resultsDay === 'all' ? [1, 2, 3] : [state.resultsDay];
+  const container = document.getElementById('results-list');
+
+  let html = '';
+
+  daysToShow.forEach(day => {
+    const daySlots = TIMETABLE.filter(s => s.day === day);
+    const stages = STAGES_ORDER.filter(s => daySlots.some(sl => sl.stage === s));
+
+    const allStarts = daySlots.map(s => timeToMinutes(s.time));
+    const allEnds   = daySlots.map(s => timeToMinutes(s.time) + s.duration);
+    const minTime   = Math.min(...allStarts);
+    const maxTime   = Math.max(...allEnds);
+    const totalCols = Math.ceil((maxTime - minTime) / 30);
+    const COL = 80; // narrower for results
+
+    // Only show stages that have at least 1 vote
+    const votedStages = stages.filter(stage =>
+      daySlots.filter(s => s.stage === stage).some(s => {
+        const v = getVotersForArtist(s.id);
+        return v[1].length + v[2].length + v[3].length > 0;
+      })
+    );
+
+    if (!votedStages.length) return;
+
+    // Header
+    let headerCells = '';
+    for (let i = 0; i < totalCols; i++) {
+      const t = minTime + i * 30;
+      // only show every hour
+      const m = t % 60;
+      headerCells += `<div class="rt-hcell">${m === 0 ? formatMin(t) : ''}</div>`;
+    }
+
+    let stageRows = '';
+    votedStages.forEach(stage => {
+      const color = STAGE_COLORS[stage] || '#888';
+      const stageSlots = daySlots.filter(s => s.stage === stage);
+
+      let slotHtml = '';
+      stageSlots.forEach(slot => {
+        const voters = getVotersForArtist(slot.id);
+        const totalVoters = voters[1].length + voters[2].length + voters[3].length;
+        const score = getTotalScore(slot.id);
+        if (totalVoters === 0) {
+          // Show as ghost slot
+          const startCol = (timeToMinutes(slot.time) - minTime) / 30;
+          const spanCols = slot.duration / 30;
+          slotHtml += `<div class="rt-slot ghost" style="left:${startCol*COL}px;width:${spanCols*COL-3}px"></div>`;
+          return;
+        }
+
+        const startCol = (timeToMinutes(slot.time) - minTime) / 30;
+        const spanCols = slot.duration / 30;
+        const myVote = getMyVote(slot.id);
+        const voteColor = myVote ? VOTE_LEVELS[myVote-1].color : color;
+
+        // Vote bars: proportional height for each level
+        const maxV = Math.max(voters[1].length, voters[2].length, voters[3].length, 1);
+        const bars = VOTE_LEVELS.map(vl =>
+          voters[vl.value].length > 0
+            ? `<div class="rt-bar" style="height:${(voters[vl.value].length/maxV)*100}%;background:${vl.color}"></div>`
+            : `<div class="rt-bar" style="height:0"></div>`
+        ).join('');
+
+        // Tooltip content
+        const tipRows = VOTE_LEVELS.map(vl =>
+          voters[vl.value].length ? `<div>${vl.emoji} ${voters[vl.value].join(', ')}</div>` : ''
+        ).join('');
+
+        slotHtml += `
+          <div class="rt-slot voted ${myVote ? 'myvote' : ''}"
+            style="left:${startCol*COL}px;width:${spanCols*COL-3}px;--c:${color};--vc:${voteColor}">
+            <div class="rt-bars">${bars}</div>
+            <div class="rt-name">${slot.name}</div>
+            <div class="rt-time">${slot.time}</div>
+            <div class="rt-tooltip">
+              <div class="rtt-name">${slot.name}</div>
+              <div class="rtt-stage" style="color:${color}">${stage}</div>
+              <div class="rtt-time">${slot.time}–${formatMin(timeToMinutes(slot.time)+slot.duration)}</div>
+              <div class="rtt-votes">${tipRows}</div>
+              <div class="rtt-score">Score: ${score} pts</div>
+            </div>
+          </div>`;
+      });
+
+      stageRows += `
+        <div class="rt-row">
+          <div class="rt-slabel" style="--c:${color}">${stage}</div>
+          <div class="rt-cells" style="width:${totalCols*COL}px;height:56px;position:relative">${slotHtml}</div>
+        </div>`;
     });
-    return { ...s, score, counts };
-  }).filter(s => s.score > 0).sort((a, b) => b.score - a.score);
 
-  if (!scored.length) {
-    list.innerHTML = '<div class="empty-state">Personne n\'a encore voté 🎵</div>';
-    return;
-  }
-
-  const maxScore = scored[0].score;
-  list.innerHTML = scored.map((s, i) => {
-    const color = STAGE_COLORS[s.stage] || '#888';
-    const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i+1}.`;
-    const voterRows = VOTE_LEVELS.map(vl => {
-      const voters = state.users.filter(u => state.votes[`${u}:${s.id}`] === vl.value);
-      return voters.length ? `<span class="rvl" style="color:${vl.color}">${vl.emoji} ${voters.join(', ')}</span>` : '';
-    }).join('');
-
-    return `<div class="result-row">
-      <div class="result-rank">${medal}</div>
-      <div class="result-info">
-        <div class="result-name">${s.name}</div>
-        <div class="result-meta">
-          <span class="stage-tag" style="background:${color}20;color:${color};border:1px solid ${color}40">${s.stage}</span>
-          <span class="day-tag">${DAY_LABELS[s.day]} · ${s.time}</span>
+    html += `
+      <div class="rt-day">
+        <div class="rt-day-title">${DAY_LABELS[day]}</div>
+        <div class="rt-table">
+          <div class="rt-head-row">
+            <div class="rt-slabel rt-corner"></div>
+            <div class="rt-head-cells" style="width:${totalCols*COL}px">${headerCells}</div>
+          </div>
+          ${stageRows}
         </div>
-        <div class="result-voters">${voterRows}</div>
-        <div class="result-bar-wrap"><div class="result-bar" style="width:${(s.score/maxScore)*100}%;background:${color}"></div></div>
-      </div>
-      <div class="result-count" style="color:${color}">${s.score}<span>pts</span></div>
-    </div>`;
-  }).join('');
+      </div>`;
+  });
+
+  container.innerHTML = html || '<div class="empty-state">Personne n\'a encore voté 🎵</div>';
 }
 
 // --- Particles ---
@@ -398,6 +467,17 @@ function initParticles() {
   }
 }
 
+// --- Photo Strip ---
+function initPhotoStrip() {
+  const track = document.getElementById('photo-track');
+  if (!track || !window.CREW_PHOTOS) return;
+  // Duplicate photos for seamless loop
+  const allPhotos = [...CREW_PHOTOS, ...CREW_PHOTOS];
+  track.innerHTML = allPhotos.map((src, i) =>
+    `<img class="photo-frame" src="${src}" alt="crew photo ${i+1}" />`
+  ).join('');
+}
+
 // --- Init ---
 initParticles();
-loadVotes().then(() => { renderUserList(); showScreen('login'); });
+loadVotes().then(() => { renderUserList(); showScreen('login'); initPhotoStrip(); });
