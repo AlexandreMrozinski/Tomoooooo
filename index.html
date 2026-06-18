@@ -10,11 +10,9 @@
 </head>
 <body>
 
-<!-- SCREEN: Identification -->
+<!-- SCREEN: Login -->
 <div id="screen-login" class="screen active">
-  <div class="login-bg">
-    <div class="login-particles" id="particles"></div>
-  </div>
+  <div class="login-bg"><div class="login-particles" id="particles"></div></div>
   <div class="login-card">
     <div class="tml-badge">TML · W2 · 24–26 JUILLET 2026</div>
     <h1>Qui es-tu ?</h1>
@@ -31,61 +29,52 @@
 <div id="screen-vote" class="screen">
   <header class="topbar">
     <div class="topbar-left">
-      <span class="topbar-badge">TML W2 2026</span>
+      <span class="topbar-badge">TML W2</span>
       <span id="topbar-user" class="topbar-user"></span>
     </div>
     <nav class="topbar-nav">
-      <button class="nav-btn active" data-view="vote">🎵 Voter</button>
+      <button class="nav-btn active" data-view="timetable">🗓 Timetable</button>
       <button class="nav-btn" data-view="results">🏆 Résultats</button>
     </nav>
     <button id="logout-btn" class="logout-btn">Changer</button>
   </header>
 
-  <!-- VOTE VIEW -->
-  <div id="view-vote" class="view active">
-    <div class="filter-bar">
-      <div class="filter-group">
-        <span class="filter-label">Jour</span>
-        <div class="filter-pills" id="day-filter">
-          <button class="pill active" data-day="all">Tous</button>
-          <button class="pill" data-day="1">Vendredi 24</button>
-          <button class="pill" data-day="2">Samedi 25</button>
-          <button class="pill" data-day="3">Dimanche 26</button>
-        </div>
-      </div>
-      <div class="filter-group">
-        <span class="filter-label">Scène</span>
-        <div class="filter-pills" id="stage-filter">
-          <button class="pill active" data-stage="all">Toutes</button>
-        </div>
-      </div>
-      <div class="filter-group search-group">
-        <input type="text" id="search-input" placeholder="🔍 Rechercher un artiste…" />
-      </div>
-      <div class="vote-counter">
-        <span id="vote-count">0</span> votes
+  <!-- TIMETABLE VIEW -->
+  <div id="view-timetable" class="view active">
+    <div class="tt-day-bar">
+      <button class="day-tab active" data-day="1">🌙 Ven 24</button>
+      <button class="day-tab" data-day="2">⚡ Sam 25</button>
+      <button class="day-tab" data-day="3">🔥 Dim 26</button>
+      <div class="vote-legend">
+        <span class="leg" style="--c:#FF6B35">🔥 Priorité</span>
+        <span class="leg" style="--c:#3498DB">👍 Si dispo</span>
+        <span class="leg" style="--c:#7878a0">🤷 Pourquoi pas</span>
       </div>
     </div>
-
-    <div id="lineup-grid" class="lineup-grid"></div>
+    <div class="tt-scroll-wrap">
+      <div id="timetable-grid" class="timetable-grid"></div>
+    </div>
   </div>
 
   <!-- RESULTS VIEW -->
   <div id="view-results" class="view">
     <div class="results-header">
       <h2>Classement du groupe</h2>
-      <p class="results-sub">Les artistes triés par nombre de votes</p>
+      <p class="results-sub">Score: 🔥×3pts · 👍×2pts · 🤷×1pt</p>
       <div class="participant-chips" id="participant-chips"></div>
     </div>
-    <div id="results-day-tabs" class="results-day-tabs">
-      <button class="rtab active" data-rday="all">Tous les jours</button>
-      <button class="rtab" data-rday="1">Vendredi 24</button>
-      <button class="rtab" data-rday="2">Samedi 25</button>
-      <button class="rtab" data-rday="3">Dimanche 26</button>
+    <div class="results-day-tabs" id="results-day-tabs">
+      <button class="rtab active" data-rday="all">Tous</button>
+      <button class="rtab" data-rday="1">Ven 24</button>
+      <button class="rtab" data-rday="2">Sam 25</button>
+      <button class="rtab" data-rday="3">Dim 26</button>
     </div>
     <div id="results-list" class="results-list"></div>
   </div>
 </div>
+
+<!-- VOTE MODAL -->
+<div id="modal-overlay" class="modal-overlay"></div>
 
 <script src="data.js"></script>
 <script src="app.js"></script>
