@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TML W2 2026 — Vote entre amis</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- SCREEN: Identification -->
+<div id="screen-login" class="screen active">
+  <div class="login-bg">
+    <div class="login-particles" id="particles"></div>
+  </div>
+  <div class="login-card">
+    <div class="tml-badge">TML · W2 · 24–26 JUILLET 2026</div>
+    <h1>Qui es-tu ?</h1>
+    <p class="login-sub">Choisis ton prénom pour voter sur la programmation.</p>
+    <div id="user-list" class="user-list"></div>
+    <div class="add-user-row">
+      <input type="text" id="new-user-input" placeholder="Ajouter un prénom…" maxlength="20" />
+      <button id="add-user-btn">+</button>
+    </div>
+  </div>
+</div>
+
+<!-- SCREEN: Vote -->
+<div id="screen-vote" class="screen">
+  <header class="topbar">
+    <div class="topbar-left">
+      <span class="topbar-badge">TML W2 2026</span>
+      <span id="topbar-user" class="topbar-user"></span>
+    </div>
+    <nav class="topbar-nav">
+      <button class="nav-btn active" data-view="vote">🎵 Voter</button>
+      <button class="nav-btn" data-view="results">🏆 Résultats</button>
+    </nav>
+    <button id="logout-btn" class="logout-btn">Changer</button>
+  </header>
+
+  <!-- VOTE VIEW -->
+  <div id="view-vote" class="view active">
+    <div class="filter-bar">
+      <div class="filter-group">
+        <span class="filter-label">Jour</span>
+        <div class="filter-pills" id="day-filter">
+          <button class="pill active" data-day="all">Tous</button>
+          <button class="pill" data-day="1">Vendredi 24</button>
+          <button class="pill" data-day="2">Samedi 25</button>
+          <button class="pill" data-day="3">Dimanche 26</button>
+        </div>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">Scène</span>
+        <div class="filter-pills" id="stage-filter">
+          <button class="pill active" data-stage="all">Toutes</button>
+        </div>
+      </div>
+      <div class="filter-group search-group">
+        <input type="text" id="search-input" placeholder="🔍 Rechercher un artiste…" />
+      </div>
+      <div class="vote-counter">
+        <span id="vote-count">0</span> votes
+      </div>
+    </div>
+
+    <div id="lineup-grid" class="lineup-grid"></div>
+  </div>
+
+  <!-- RESULTS VIEW -->
+  <div id="view-results" class="view">
+    <div class="results-header">
+      <h2>Classement du groupe</h2>
+      <p class="results-sub">Les artistes triés par nombre de votes</p>
+      <div class="participant-chips" id="participant-chips"></div>
+    </div>
+    <div id="results-day-tabs" class="results-day-tabs">
+      <button class="rtab active" data-rday="all">Tous les jours</button>
+      <button class="rtab" data-rday="1">Vendredi 24</button>
+      <button class="rtab" data-rday="2">Samedi 25</button>
+      <button class="rtab" data-rday="3">Dimanche 26</button>
+    </div>
+    <div id="results-list" class="results-list"></div>
+  </div>
+</div>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
