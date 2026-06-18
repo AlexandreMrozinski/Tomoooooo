@@ -480,4 +480,7 @@ function initPhotoStrip() {
 
 // --- Init ---
 initParticles();
-loadVotes().then(() => { renderUserList(); showScreen('login'); initPhotoStrip(); });
+window.addEventListener('load', () => {
+  initPhotoStrip();
+});
+loadVotes().then(() => { renderUserList(); showScreen('login'); });
