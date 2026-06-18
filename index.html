@@ -92,13 +92,24 @@
 <!-- VOTE MODAL -->
 <div id="modal-overlay" class="modal-overlay"></div>
 
-<!-- Photo strip -->
-<div class="photo-strip" id="photo-strip">
-  <div class="photo-track" id="photo-track"></div>
-</div>
-
 <script src="data.js"></script>
 <script src="photos.js"></script>
-<script src="app.js" defer></script>
+<script src="app.js"></script>
+<script>
+  // Init photo strip after all scripts loaded
+  (function() {
+    if (!window.CREW_PHOTOS || !CREW_PHOTOS.length) return;
+    var strip = document.createElement('div');
+    strip.className = 'photo-strip';
+    var track = document.createElement('div');
+    track.className = 'photo-track';
+    var all = [...CREW_PHOTOS, ...CREW_PHOTOS];
+    track.innerHTML = all.map(src =>
+      '<img class="photo-frame" src="' + src + '" />'
+    ).join('');
+    strip.appendChild(track);
+    document.body.appendChild(strip);
+  })();
+</script>
 </body>
 </html>

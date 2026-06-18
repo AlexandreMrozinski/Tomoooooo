@@ -498,20 +498,7 @@ function initParticles() {
   }
 }
 
-// --- Photo Strip ---
-function initPhotoStrip() {
-  const track = document.getElementById('photo-track');
-  if (!track || !window.CREW_PHOTOS) return;
-  // Duplicate photos for seamless loop
-  const allPhotos = [...CREW_PHOTOS, ...CREW_PHOTOS];
-  track.innerHTML = allPhotos.map((src, i) =>
-    `<img class="photo-frame" src="${src}" alt="crew photo ${i+1}" />`
-  ).join('');
-}
-
 // --- Init ---
 initParticles();
-window.addEventListener('load', () => {
-  initPhotoStrip();
-});
+window.addEventListener('load', () => {});
 loadVotes().then(() => { renderUserList(); showScreen('login'); });
