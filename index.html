@@ -36,6 +36,7 @@
       <button class="nav-btn active" data-view="timetable">🗓 Timetable</button>
       <button class="nav-btn" data-view="results">🏆 Résultats</button>
     </nav>
+    <button id="reset-btn" class="reset-btn">🗑 Reset</button>
     <button id="logout-btn" class="logout-btn">Changer</button>
   </header>
 
@@ -70,6 +71,21 @@
       <button class="rtab" data-rday="3">Dim 26</button>
     </div>
     <div id="results-list" class="results-list"></div>
+  </div>
+</div>
+
+<!-- RESET MODAL -->
+<div id="reset-overlay" class="modal-overlay">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-name" style="margin-bottom:8px">🗑 Reset mes votes</div>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:20px">Choisir le jour à effacer :</p>
+    <div class="modal-btns">
+      <button class="mvbtn" style="--vc:#FF6B35" onclick="resetDay(1)"><span class="mvbtn-emoji">🌙</span><span class="mvbtn-label">Vendredi 24/07</span></button>
+      <button class="mvbtn" style="--vc:#3498DB" onclick="resetDay(2)"><span class="mvbtn-emoji">⚡</span><span class="mvbtn-label">Samedi 25/07</span></button>
+      <button class="mvbtn" style="--vc:#E91E8C" onclick="resetDay(3)"><span class="mvbtn-emoji">🔥</span><span class="mvbtn-label">Dimanche 26/07</span></button>
+      <button class="mvbtn" style="--vc:#E74C3C" onclick="resetDay('all')"><span class="mvbtn-emoji">💥</span><span class="mvbtn-label">Tous les jours</span></button>
+    </div>
+    <button class="modal-close" onclick="closeReset()">Annuler</button>
   </div>
 </div>
 

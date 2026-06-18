@@ -163,6 +163,37 @@ function startPolling() {
 }
 function stopPolling() { if (pollingInterval) { clearInterval(pollingInterval); pollingInterval = null; } }
 
+// --- Reset ---
+document.getElementById('reset-btn').onclick = () => {
+  document.getElementById('reset-overlay').classList.add('active');
+};
+function closeReset() { document.getElementById('reset-overlay').classList.remove('active'); }
+document.getElementById('reset-overlay').onclick = closeReset;
+
+async function resetDay(day) {
+  closeReset();
+  showLoader(true);
+  try {
+    // Get artist IDs for this day (or all)
+    const artistIds = day === 'all'
+      ? TIMETABLE.map(s => s.id)
+      : TIMETABLE.filter(s => s.day === day).map(s => s.id);
+
+    // Delete from Supabase
+    const idsStr = artistIds.join(',');
+    await db.delete(`votes?user_name=eq.${encodeURIComponent(state.currentUser)}&artist_id=in.(${idsStr})`);
+
+    // Update local state
+    artistIds.forEach(id => {
+      delete state.votes[`${state.currentUser}:${id}`];
+    });
+
+    renderTimetable();
+    renderParticipantChips();
+  } catch(e) { console.error(e); }
+  showLoader(false);
+}
+
 // --- Nav ---
 document.querySelectorAll('.nav-btn').forEach(btn => {
   btn.onclick = () => {

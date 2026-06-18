@@ -42,6 +42,8 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 .nav-btn { background: transparent; border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; color: var(--muted); cursor: pointer; font-family: var(--font); font-size: 13px; font-weight: 500; transition: all .15s; }
 .nav-btn.active { background: var(--accent); border-color: var(--accent); color: white; }
 .nav-btn:hover:not(.active) { border-color: var(--accent); color: var(--text); }
+.reset-btn { background: transparent; border: 1px solid rgba(231,76,60,.4); border-radius: 8px; padding: 6px 10px; color: rgba(231,76,60,.7); cursor: pointer; font-family: var(--font); font-size: 12px; transition: all .15s; white-space: nowrap; }
+.reset-btn:hover { border-color: #E74C3C; color: #E74C3C; background: rgba(231,76,60,.08); }
 .logout-btn { background: transparent; border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; color: var(--muted); cursor: pointer; font-family: var(--font); font-size: 12px; transition: all .15s; white-space: nowrap; }
 .logout-btn:hover { border-color: var(--muted); color: var(--text); }
 
