@@ -66,8 +66,13 @@
   <!-- MON PLANNING VIEW -->
   <div id="view-planning" class="view">
     <div class="planning-header">
-      <h2>📍 Mon planning</h2>
-      <p class="results-sub">Tes concerts votés, triés par heure</p>
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <h2>📍 Mon planning</h2>
+          <p class="results-sub">Tes concerts votés, triés par heure</p>
+        </div>
+        <button id="export-pdf-btn" class="export-btn" onclick="exportPDF()">⬇️ Exporter PDF</button>
+      </div>
     </div>
     <div class="results-day-tabs">
       <button class="ptab active" data-pday="all">Tous</button>

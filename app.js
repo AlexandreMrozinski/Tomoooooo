@@ -720,6 +720,64 @@ function renderCompat() {
   }).join('');
 }
 
+// --- Export PDF ---
+function exportPDF() {
+  const conflicts = getMyConflicts();
+
+  // Build 3-column layout: one per day
+  const columns = [1, 2, 3].map(day => {
+    const daySlots = TIMETABLE
+      .filter(s => s.day === day && getMyVote(s.id))
+      .sort((a, b) => timeToMinutes(a.time) - timeToMinutes(b.time));
+
+    if (!daySlots.length) return `<div class="print-col"></div>`;
+
+    const rows = daySlots.map(slot => {
+      const myVote = getMyVote(slot.id);
+      const vl = VOTE_LEVELS[myVote - 1];
+      const color = STAGE_COLORS[slot.stage] || '#888';
+      const isConflict = conflicts.has(slot.id);
+      const myComment = getMyComment(slot.id);
+      return `<div class="planning-row ${isConflict ? 'conflict' : ''}">
+        <div class="planning-vote-badge">${vl.emoji}</div>
+        <div class="planning-info">
+          <div class="planning-name">${slot.name}${isConflict ? ' <span class="conflict-badge">⚠️</span>' : ''}</div>
+          <div class="planning-meta">
+            <span class="stage-tag" style="background:${color}20;color:${color};border:1px solid ${color}50">${slot.stage}</span>
+            <span class="planning-time">${slot.time}→${formatMin(timeToMinutes(slot.time)+slot.duration)}</span>
+          </div>
+          ${myComment ? `<div class="planning-comment">💬 ${myComment}</div>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+
+    return `<div class="print-col">
+      <div class="planning-day-title">${DAY_LABELS[day]}</div>
+      ${rows}
+    </div>`;
+  });
+
+  // Inject print area
+  const list = document.getElementById('planning-list');
+  list.innerHTML = `
+    <div id="print-header">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding-bottom:10px;margin-bottom:12px;border-bottom:2px solid #7B5EA7;">
+        <div>
+          <div style="font-size:18px;font-weight:700;color:#7B5EA7;">🎪 Tomorrowland Belgium — Weekend 2 · 2026</div>
+          <div style="font-size:13px;color:#555;margin-top:2px;">Planning de <strong>${state.currentUser}</strong> · 24–26 juillet 2026</div>
+        </div>
+        <div style="font-size:12px;color:#888;">🔥 Priorité &nbsp; 👍 Si dispo &nbsp; 🤷 Pourquoi pas &nbsp; ⚠️ Conflit</div>
+      </div>
+    </div>
+    <div class="planning-columns">${columns.join('')}</div>`;
+
+  setTimeout(() => {
+    window.print();
+    // Restore normal planning view after print dialog
+    setTimeout(() => renderPlanning(), 500);
+  }, 150);
+}
+
 // --- Particles ---
 function initParticles() {
   const c = document.getElementById('particles');
