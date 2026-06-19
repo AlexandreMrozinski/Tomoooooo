@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>TML W2 2026 — Vote entre amis</title>
+  <title id="page-title">TML W2 2026 — Vote entre amis</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
@@ -34,7 +34,9 @@
     </div>
     <nav class="topbar-nav">
       <button class="nav-btn active" data-view="timetable">🗓 Timetable</button>
+      <button class="nav-btn" data-view="planning">📍 Mon plan</button>
       <button class="nav-btn" data-view="results">🏆 Résultats</button>
+      <button class="nav-btn" data-view="compat">🎯 Affinités</button>
     </nav>
     <button id="reset-btn" class="reset-btn">🗑 Reset</button>
     <button id="logout-btn" class="logout-btn">Changer</button>
@@ -50,6 +52,10 @@
         <span class="leg" style="--c:#FF6B35">🔥 Priorité</span>
         <span class="leg" style="--c:#3498DB">👍 Si dispo</span>
         <span class="leg" style="--c:#7878a0">🤷 Pourquoi pas</span>
+        <span class="leg" style="--c:#E74C3C">⚠️ Conflit</span>
+      </div>
+      <div class="search-pill">
+        <input type="text" id="tt-search" placeholder="🔍 Artiste…" />
       </div>
     </div>
     <div class="tt-scroll-wrap">
@@ -57,10 +63,25 @@
     </div>
   </div>
 
+  <!-- MON PLANNING VIEW -->
+  <div id="view-planning" class="view">
+    <div class="planning-header">
+      <h2>📍 Mon planning</h2>
+      <p class="results-sub">Tes concerts votés, triés par heure</p>
+    </div>
+    <div class="results-day-tabs">
+      <button class="ptab active" data-pday="all">Tous</button>
+      <button class="ptab" data-pday="1">Ven 24</button>
+      <button class="ptab" data-pday="2">Sam 25</button>
+      <button class="ptab" data-pday="3">Dim 26</button>
+    </div>
+    <div id="planning-list" class="planning-list"></div>
+  </div>
+
   <!-- RESULTS VIEW -->
   <div id="view-results" class="view">
     <div class="results-header">
-      <h2>Classement du groupe</h2>
+      <h2>🏆 Classement du groupe</h2>
       <p class="results-sub">Score: 🔥×3pts · 👍×2pts · 🤷×1pt</p>
       <div class="participant-chips" id="participant-chips"></div>
     </div>
@@ -71,6 +92,15 @@
       <button class="rtab" data-rday="3">Dim 26</button>
     </div>
     <div id="results-list" class="results-list"></div>
+  </div>
+
+  <!-- AFFINITÉS VIEW -->
+  <div id="view-compat" class="view">
+    <div class="results-header">
+      <h2>🎯 Affinités du groupe</h2>
+      <p class="results-sub">Avec qui tu as le plus de goûts en commun ?</p>
+    </div>
+    <div id="compat-list" class="compat-list"></div>
   </div>
 </div>
 
@@ -88,6 +118,9 @@
     <button class="modal-close" onclick="closeReset()">Annuler</button>
   </div>
 </div>
+
+<!-- COMMENT MODAL -->
+<div id="comment-overlay" class="modal-overlay"></div>
 
 <!-- VOTE MODAL -->
 <div id="modal-overlay" class="modal-overlay"></div>

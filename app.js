@@ -1,5 +1,6 @@
 // =============================
-//  TML W2 2026 — Vote App v3
+//  TML W2 2026 — Vote App v4
+//  Toutes les features !
 // =============================
 
 const SUPABASE_URL = 'https://swyyjvutelcdixwsueta.supabase.co';
@@ -28,33 +29,37 @@ const db = {
 // --- State ---
 let state = {
   users: JSON.parse(localStorage.getItem('tml_users') || '[]'),
-  votes: {},
+  votes: {},       // "user:artistId" => voteLevel
+  comments: {},    // "user:artistId" => string
   currentUser: null,
   currentView: 'timetable',
   timetableDay: 1,
   resultsDay: 'all',
+  planningDay: 'all',
+  searchQuery: '',
 };
 
 function saveUsers() { localStorage.setItem('tml_users', JSON.stringify(state.users)); }
 
 // --- Supabase ---
 async function loadVotes() {
-  showLoader(true);
   try {
-    const rows = await db.get('votes?select=user_name,artist_id,vote_level');
+    const rows = await db.get('votes?select=user_name,artist_id,vote_level,comment');
     state.votes = {};
+    state.comments = {};
     if (Array.isArray(rows)) {
       rows.forEach(r => {
         if (!r.user_name || !r.artist_id) return;
         state.votes[`${r.user_name}:${r.artist_id}`] = r.vote_level;
+        if (r.comment) state.comments[`${r.user_name}:${r.artist_id}`] = r.comment;
         if (!state.users.includes(r.user_name)) { state.users.push(r.user_name); saveUsers(); }
       });
     }
   } catch(e) { console.error(e); }
-  showLoader(false);
 }
 
 function getMyVote(artistId) { return state.votes[`${state.currentUser}:${artistId}`] || null; }
+function getMyComment(artistId) { return state.comments[`${state.currentUser}:${artistId}`] || ''; }
 
 function getVotersForArtist(artistId) {
   const result = { 1: [], 2: [], 3: [] };
@@ -72,7 +77,37 @@ function getTotalScore(artistId) {
   return score;
 }
 
-// FIX bug premier vote: update state BEFORE re-rendering
+function getVoteCount(userName) {
+  const prefix = userName + ':';
+  return Object.keys(state.votes).filter(k => k.startsWith(prefix) && k.length > prefix.length).length;
+}
+
+// Detect conflicts: slots that overlap with other voted slots for current user
+function getMyConflicts() {
+  const myVotedIds = Object.keys(state.votes)
+    .filter(k => k.startsWith(state.currentUser + ':') && k.length > state.currentUser.length + 1)
+    .map(k => parseInt(k.split(':')[1]))
+    .filter(id => !isNaN(id));
+
+  const mySlots = TIMETABLE.filter(s => myVotedIds.includes(s.id));
+  const conflictIds = new Set();
+
+  mySlots.forEach(a => {
+    const aStart = timeToMinutes(a.time);
+    const aEnd = aStart + a.duration;
+    mySlots.forEach(b => {
+      if (a.id === b.id || a.day !== b.day) return;
+      const bStart = timeToMinutes(b.time);
+      const bEnd = bStart + b.duration;
+      if (aStart < bEnd && aEnd > bStart) {
+        conflictIds.add(a.id);
+        conflictIds.add(b.id);
+      }
+    });
+  });
+  return conflictIds;
+}
+
 async function setVote(artistId, level) {
   if (!state.currentUser) return;
   const key = `${state.currentUser}:${artistId}`;
@@ -86,8 +121,25 @@ async function setVote(artistId, level) {
     state.votes[key] = level;
     renderTimetable();
     openVoteModal(artistId);
-    await db.post('votes', { user_name: state.currentUser, artist_id: artistId, vote_level: level });
+    const comment = state.comments[key] || null;
+    await db.post('votes', { user_name: state.currentUser, artist_id: artistId, vote_level: level, comment });
   }
+  updatePageTitle();
+}
+
+async function saveComment(artistId, text) {
+  const key = `${state.currentUser}:${artistId}`;
+  const voteLevel = state.votes[key];
+  if (!voteLevel) return; // must have voted first
+  if (text) state.comments[key] = text;
+  else delete state.comments[key];
+  await db.post('votes', { user_name: state.currentUser, artist_id: artistId, vote_level: voteLevel, comment: text || null });
+}
+
+// --- Page title badge ---
+function updatePageTitle() {
+  const count = getVoteCount(state.currentUser);
+  document.title = count > 0 ? `(${count}) TML W2 2026` : 'TML W2 2026 — Vote entre amis';
 }
 
 // --- Loader ---
@@ -118,12 +170,11 @@ function renderUserList() {
     return;
   }
   el.innerHTML = state.users.map(u => {
-    const prefix = u + ':';
-    const count = Object.keys(state.votes).filter(k => k.startsWith(prefix) && k.length > prefix.length).length;
+    const count = getVoteCount(u);
     return `<button class="user-btn" onclick="selectUser('${u}')">
       <span class="user-avatar">${u[0].toUpperCase()}</span>
       <span class="user-name">${u}</span>
-      <span class="user-votes">${count} votes</span>
+      <span class="user-votes">${count} vote${count !== 1 ? 's' : ''}</span>
     </button>`;
   }).join('');
 }
@@ -133,7 +184,12 @@ async function selectUser(name) {
   document.getElementById('topbar-user').textContent = name;
   showScreen('vote');
   renderTimetable();
+  updatePageTitle();
   startPolling();
+  // Auto-login via URL param
+  const url = new URL(window.location);
+  url.searchParams.set('user', name);
+  window.history.replaceState({}, '', url);
 }
 
 document.getElementById('add-user-btn').onclick = async () => {
@@ -148,8 +204,14 @@ document.getElementById('new-user-input').addEventListener('keydown', e => {
   if (e.key === 'Enter') document.getElementById('add-user-btn').click();
 });
 document.getElementById('logout-btn').onclick = () => {
-  stopPolling(); state.currentUser = null;
-  showScreen('login'); loadVotes().then(renderUserList);
+  stopPolling();
+  state.currentUser = null;
+  const url = new URL(window.location);
+  url.searchParams.delete('user');
+  window.history.replaceState({}, '', url);
+  document.title = 'TML W2 2026 — Vote entre amis';
+  showScreen('login');
+  renderUserList();
 };
 
 // --- Polling ---
@@ -160,15 +222,30 @@ function startPolling() {
     const prevVotes = JSON.stringify(state.votes);
     await loadVotes();
     const newVotes = JSON.stringify(state.votes);
-    // Only re-render if votes actually changed
     if (prevVotes !== newVotes) {
       if (state.currentView === 'timetable') renderTimetable();
-      else renderResults();
+      else if (state.currentView === 'results') renderResults();
+      else if (state.currentView === 'planning') renderPlanning();
+      else if (state.currentView === 'compat') renderCompat();
       renderParticipantChips();
+      updatePageTitle();
     }
   }, 15000);
 }
 function stopPolling() { if (pollingInterval) { clearInterval(pollingInterval); pollingInterval = null; } }
+
+// --- Nav ---
+document.querySelectorAll('.nav-btn').forEach(btn => {
+  btn.onclick = () => {
+    state.currentView = btn.dataset.view;
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b === btn));
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    document.getElementById('view-' + btn.dataset.view).classList.add('active');
+    if (btn.dataset.view === 'results') renderResults();
+    else if (btn.dataset.view === 'planning') renderPlanning();
+    else if (btn.dataset.view === 'compat') renderCompat();
+  };
+});
 
 // --- Reset ---
 document.getElementById('reset-btn').onclick = () => {
@@ -182,47 +259,33 @@ async function resetDay(day) {
   showLoader(true);
   try {
     if (day === 'all') {
-      // Delete all votes for this user
       await db.delete(`votes?user_name=eq.${encodeURIComponent(state.currentUser)}`);
-      // Clear local state
       Object.keys(state.votes).forEach(k => {
         if (k.startsWith(state.currentUser + ':')) delete state.votes[k];
       });
+      Object.keys(state.comments).forEach(k => {
+        if (k.startsWith(state.currentUser + ':')) delete state.comments[k];
+      });
     } else {
-      // Get artist IDs for this day from current TIMETABLE
-      const artistIds = TIMETABLE.filter(s => s.day === day).map(s => s.id);
-      const idsStr = artistIds.join(',');
-      // Also delete any orphan votes not in current timetable by fetching user votes first
       const userVotes = await db.get(`votes?user_name=eq.${encodeURIComponent(state.currentUser)}&select=artist_id`);
       if (Array.isArray(userVotes) && userVotes.length) {
-        // Get all artist_ids that belong to this day (from DB perspective, check against TIMETABLE day)
         const dayArtistIds = TIMETABLE.filter(s => s.day === day).map(s => s.id);
         const toDelete = userVotes.map(v => v.artist_id).filter(id => dayArtistIds.includes(id));
         if (toDelete.length) {
           await db.delete(`votes?user_name=eq.${encodeURIComponent(state.currentUser)}&artist_id=in.(${toDelete.join(',')})`);
+          toDelete.forEach(id => {
+            delete state.votes[`${state.currentUser}:${id}`];
+            delete state.comments[`${state.currentUser}:${id}`];
+          });
         }
       }
-      // Clear local state for this day
-      artistIds.forEach(id => {
-        delete state.votes[`${state.currentUser}:${id}`];
-      });
     }
     renderTimetable();
     renderParticipantChips();
+    updatePageTitle();
   } catch(e) { console.error(e); }
   showLoader(false);
 }
-
-// --- Nav ---
-document.querySelectorAll('.nav-btn').forEach(btn => {
-  btn.onclick = () => {
-    state.currentView = btn.dataset.view;
-    document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b === btn));
-    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-    document.getElementById('view-' + btn.dataset.view).classList.add('active');
-    if (btn.dataset.view === 'results') renderResults();
-  };
-});
 
 // ══════════════════════════════════════
 //  TIMETABLE
@@ -237,6 +300,12 @@ document.querySelectorAll('.day-tab').forEach(btn => {
   };
 });
 
+// Search in timetable
+document.getElementById('tt-search').addEventListener('input', e => {
+  state.searchQuery = e.target.value.toLowerCase().trim();
+  renderTimetable();
+});
+
 function timeToMinutes(t) {
   const [h, m] = t.split(':').map(Number);
   return (h < 10 ? h + 24 : h) * 60 + m;
@@ -248,29 +317,31 @@ function formatMin(totalMin) {
   return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
 }
 
-const SLOT_W = 130;   // px per 30min
-const ROW_H  = 78;    // px per row
-const LABEL_W = 0;    // label is separate sticky column now
+const SLOT_W = 130;
+const ROW_H  = 78;
 
 function renderTimetable() {
   const day = state.timetableDay;
-  const slots = TIMETABLE.filter(s => s.day === day);
-  const stages = STAGES_ORDER.filter(s => slots.some(sl => sl.stage === s));
+  let slots = TIMETABLE.filter(s => s.day === day);
 
+  // Search filter — highlight matching, dim others
+  const q = state.searchQuery;
+
+  const stages = STAGES_ORDER.filter(s => slots.some(sl => sl.stage === s));
   const allStarts = slots.map(s => timeToMinutes(s.time));
   const allEnds   = slots.map(s => timeToMinutes(s.time) + s.duration);
   const minTime   = Math.min(...allStarts);
   const maxTime   = Math.max(...allEnds);
   const totalCols = Math.ceil((maxTime - minTime) / 30);
 
-  // Time header cells
+  const conflicts = getMyConflicts();
+
   let headerCells = '';
   for (let i = 0; i < totalCols; i++) {
     const t = minTime + i * 30;
     headerCells += `<div class="tt-hcell">${formatMin(t)}</div>`;
   }
 
-  // Stage rows
   let bodyRows = '';
   stages.forEach(stage => {
     const color = STAGE_COLORS[stage] || '#888';
@@ -285,25 +356,30 @@ function renderTimetable() {
       const myVote = getMyVote(slot.id);
       const voters = getVotersForArtist(slot.id);
       const totalVoters = voters[1].length + voters[2].length + voters[3].length;
-      const voteColor = myVote ? VOTE_LEVELS[myVote-1].color : color;
+      const isConflict = conflicts.has(slot.id);
+      const voteColor = isConflict ? '#E74C3C' : (myVote ? VOTE_LEVELS[myVote-1].color : color);
+      const myComment = getMyComment(slot.id);
 
-      // Dots showing group votes
       const dots = VOTE_LEVELS.map(vl =>
         voters[vl.value].map(u =>
-          `<span class="sdot" style="background:${vl.color}" title="${u}: ${vl.label}"></span>`
+          `<span class="sdot" style="background:${vl.color}" title="${u}"></span>`
         ).join('')
       ).join('');
 
+      const dimmed = q && !slot.name.toLowerCase().includes(q) ? 'dimmed' : '';
+      const highlighted = q && slot.name.toLowerCase().includes(q) ? 'highlighted' : '';
+
       slotHtml += `
-        <div class="tt-slot ${myVote ? 'voted v'+myVote : ''}"
+        <div class="tt-slot ${myVote ? 'voted v'+myVote : ''} ${isConflict ? 'conflict' : ''} ${dimmed} ${highlighted}"
           style="left:${left}px;width:${width}px;--c:${color};--vc:${voteColor};height:${ROW_H-8}px;top:4px"
           onclick="openVoteModal(${slot.id})">
           <div class="tt-slot-inner">
             <div class="tt-sname">${slot.name}</div>
             <div class="tt-stime">${slot.time}–${formatMin(timeToMinutes(slot.time)+slot.duration)}</div>
             ${totalVoters > 0 ? `<div class="tt-dots">${dots}</div>` : ''}
+            ${myComment ? `<div class="tt-comment-dot" title="${myComment}">💬</div>` : ''}
           </div>
-          ${myVote ? `<div class="tt-myvote">${VOTE_LEVELS[myVote-1].emoji}</div>` : ''}
+          ${myVote ? `<div class="tt-myvote">${isConflict ? '⚠️' : VOTE_LEVELS[myVote-1].emoji}</div>` : ''}
         </div>`;
     });
 
@@ -320,9 +396,7 @@ function renderTimetable() {
     <div class="tt-table">
       <div class="tt-head-row">
         <div class="tt-slabel tt-corner">Scène</div>
-        <div class="tt-head-scroll" style="width:${totalCols * SLOT_W}px">
-          ${headerCells}
-        </div>
+        <div class="tt-head-scroll" style="width:${totalCols * SLOT_W}px">${headerCells}</div>
       </div>
       ${bodyRows}
     </div>`;
@@ -333,8 +407,10 @@ function openVoteModal(artistId) {
   const slot = TIMETABLE.find(s => s.id === artistId);
   if (!slot) return;
   const myVote = getMyVote(artistId);
+  const myComment = getMyComment(artistId);
   const voters = getVotersForArtist(artistId);
   const color = STAGE_COLORS[slot.stage] || '#888';
+  const isConflict = getMyConflicts().has(artistId);
 
   const voterRows = VOTE_LEVELS.map(vl => {
     if (!voters[vl.value].length) return '';
@@ -347,7 +423,7 @@ function openVoteModal(artistId) {
   document.getElementById('modal-overlay').innerHTML = `
     <div class="modal" onclick="event.stopPropagation()">
       <div class="modal-stage" style="color:${color}">${slot.stage}</div>
-      <div class="modal-name">${slot.name}</div>
+      <div class="modal-name">${slot.name} ${isConflict ? '<span style="color:#E74C3C;font-size:14px">⚠️ Conflit</span>' : ''}</div>
       <div class="modal-time">${DAY_LABELS[slot.day]} · ${slot.time} → ${formatMin(timeToMinutes(slot.time)+slot.duration)}</div>
       <div class="modal-btns">
         ${VOTE_LEVELS.map(vl => {
@@ -360,17 +436,96 @@ function openVoteModal(artistId) {
           </button>`;
         }).join('')}
       </div>
+      ${myVote ? `
+        <div class="modal-comment-section">
+          <div class="modal-comment-label">💬 Note perso</div>
+          <textarea id="comment-input" placeholder="Ajouter une note…" maxlength="100">${myComment}</textarea>
+          <button class="modal-save-comment" onclick="saveCommentAndClose(${artistId})">Sauvegarder</button>
+        </div>` : ''}
       ${voterRows ? `<div class="modal-voters">${voterRows}</div>` : ''}
       <button class="modal-close" onclick="closeModal()">Fermer</button>
     </div>`;
   document.getElementById('modal-overlay').classList.add('active');
 }
 
+async function saveCommentAndClose(artistId) {
+  const input = document.getElementById('comment-input');
+  if (input) await saveComment(artistId, input.value.trim());
+  closeModal();
+  renderTimetable();
+}
+
 function closeModal() { document.getElementById('modal-overlay').classList.remove('active'); }
 document.getElementById('modal-overlay').onclick = closeModal;
 
 // ══════════════════════════════════════
-//  RESULTS — Timeline avec votes visibles
+//  MON PLANNING
+// ══════════════════════════════════════
+
+document.querySelectorAll('.ptab').forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll('.ptab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.planningDay = btn.dataset.pday === 'all' ? 'all' : parseInt(btn.dataset.pday);
+    renderPlanning();
+  };
+});
+
+function renderPlanning() {
+  const list = document.getElementById('planning-list');
+  const conflicts = getMyConflicts();
+
+  const myVotedSlots = TIMETABLE
+    .filter(s => {
+      if (state.planningDay !== 'all' && s.day !== state.planningDay) return false;
+      return !!getMyVote(s.id);
+    })
+    .sort((a, b) => {
+      if (a.day !== b.day) return a.day - b.day;
+      return timeToMinutes(a.time) - timeToMinutes(b.time);
+    });
+
+  if (!myVotedSlots.length) {
+    list.innerHTML = '<div class="empty-state">Tu n\'as pas encore voté 🎵<br>Va sur Timetable pour voter !</div>';
+    return;
+  }
+
+  // Group by day
+  const byDay = {};
+  myVotedSlots.forEach(s => {
+    if (!byDay[s.day]) byDay[s.day] = [];
+    byDay[s.day].push(s);
+  });
+
+  let html = '';
+  Object.keys(byDay).sort().forEach(day => {
+    html += `<div class="planning-day-title">${DAY_LABELS[day]}</div>`;
+    byDay[day].forEach(slot => {
+      const myVote = getMyVote(slot.id);
+      const vl = VOTE_LEVELS[myVote - 1];
+      const color = STAGE_COLORS[slot.stage] || '#888';
+      const isConflict = conflicts.has(slot.id);
+      const myComment = getMyComment(slot.id);
+
+      html += `<div class="planning-row ${isConflict ? 'conflict' : ''}" onclick="openVoteModal(${slot.id})">
+        <div class="planning-vote-badge" style="background:${vl.color}">${vl.emoji}</div>
+        <div class="planning-info">
+          <div class="planning-name">${slot.name} ${isConflict ? '<span class="conflict-badge">⚠️ Conflit</span>' : ''}</div>
+          <div class="planning-meta">
+            <span class="stage-tag" style="background:${color}20;color:${color};border:1px solid ${color}40">${slot.stage}</span>
+            <span class="planning-time">${slot.time} → ${formatMin(timeToMinutes(slot.time)+slot.duration)}</span>
+          </div>
+          ${myComment ? `<div class="planning-comment">💬 ${myComment}</div>` : ''}
+        </div>
+      </div>`;
+    });
+  });
+
+  list.innerHTML = html;
+}
+
+// ══════════════════════════════════════
+//  RÉSULTATS
 // ══════════════════════════════════════
 
 document.querySelectorAll('.rtab').forEach(btn => {
@@ -386,90 +541,74 @@ function renderParticipantChips() {
   const el = document.getElementById('participant-chips');
   if (!el) return;
   el.innerHTML = state.users.map(u => {
-    const prefix = u + ':';
-    const count = Object.keys(state.votes).filter(k => k.startsWith(prefix) && k.length > prefix.length).length;
+    const count = getVoteCount(u);
     return `<span class="p-chip ${u === state.currentUser ? 'me' : ''}">${u} · ${count}</span>`;
   }).join('');
 }
 
 function renderResults() {
   renderParticipantChips();
-
   const POINTS = { 1: 3, 2: 2, 3: 1 };
   const daysToShow = state.resultsDay === 'all' ? [1, 2, 3] : [state.resultsDay];
   const container = document.getElementById('results-list');
-
   let html = '';
 
   daysToShow.forEach(day => {
     const daySlots = TIMETABLE.filter(s => s.day === day);
     const stages = STAGES_ORDER.filter(s => daySlots.some(sl => sl.stage === s));
-
     const allStarts = daySlots.map(s => timeToMinutes(s.time));
     const allEnds   = daySlots.map(s => timeToMinutes(s.time) + s.duration);
     const minTime   = Math.min(...allStarts);
     const maxTime   = Math.max(...allEnds);
     const totalCols = Math.ceil((maxTime - minTime) / 30);
-    const COL = 80; // narrower for results
+    const COL = 80;
 
-    // Only show stages that have at least 1 vote
     const votedStages = stages.filter(stage =>
       daySlots.filter(s => s.stage === stage).some(s => {
         const v = getVotersForArtist(s.id);
         return v[1].length + v[2].length + v[3].length > 0;
       })
     );
-
     if (!votedStages.length) return;
 
-    // Header
     let headerCells = '';
     for (let i = 0; i < totalCols; i++) {
       const t = minTime + i * 30;
-      // only show every hour
-      const m = t % 60;
-      headerCells += `<div class="rt-hcell">${m === 0 ? formatMin(t) : ''}</div>`;
+      headerCells += `<div class="rt-hcell">${t % 60 === 0 ? formatMin(t) : ''}</div>`;
     }
 
     let stageRows = '';
     votedStages.forEach(stage => {
       const color = STAGE_COLORS[stage] || '#888';
       const stageSlots = daySlots.filter(s => s.stage === stage);
-
       let slotHtml = '';
+
       stageSlots.forEach(slot => {
         const voters = getVotersForArtist(slot.id);
         const totalVoters = voters[1].length + voters[2].length + voters[3].length;
         const score = getTotalScore(slot.id);
+        const startCol = (timeToMinutes(slot.time) - minTime) / 30;
+        const spanCols = slot.duration / 30;
+
         if (totalVoters === 0) {
-          // Show as ghost slot
-          const startCol = (timeToMinutes(slot.time) - minTime) / 30;
-          const spanCols = slot.duration / 30;
           slotHtml += `<div class="rt-slot ghost" style="left:${startCol*COL}px;width:${spanCols*COL-3}px"></div>`;
           return;
         }
 
-        const startCol = (timeToMinutes(slot.time) - minTime) / 30;
-        const spanCols = slot.duration / 30;
         const myVote = getMyVote(slot.id);
         const voteColor = myVote ? VOTE_LEVELS[myVote-1].color : color;
-
-        // Vote bars: proportional height for each level
         const maxV = Math.max(voters[1].length, voters[2].length, voters[3].length, 1);
         const bars = VOTE_LEVELS.map(vl =>
-          voters[vl.value].length > 0
-            ? `<div class="rt-bar" style="height:${(voters[vl.value].length/maxV)*100}%;background:${vl.color}"></div>`
-            : `<div class="rt-bar" style="height:0"></div>`
+          `<div class="rt-bar" style="height:${voters[vl.value].length > 0 ? (voters[vl.value].length/maxV)*100 : 0}%;background:${vl.color}"></div>`
         ).join('');
-
-        // Tooltip content
         const tipRows = VOTE_LEVELS.map(vl =>
           voters[vl.value].length ? `<div>${vl.emoji} ${voters[vl.value].join(', ')}</div>` : ''
         ).join('');
 
         slotHtml += `
           <div class="rt-slot voted ${myVote ? 'myvote' : ''}"
-            style="left:${startCol*COL}px;width:${spanCols*COL-3}px;--c:${color};--vc:${voteColor}">
+            style="left:${startCol*COL}px;width:${spanCols*COL-3}px;--c:${color};--vc:${voteColor}"
+            onclick="openVoteModal(${slot.id})">
             <div class="rt-bars">${bars}</div>
             <div class="rt-name">${slot.name}</div>
             <div class="rt-time">${slot.time}</div>
@@ -506,6 +645,81 @@ function renderResults() {
   container.innerHTML = html || '<div class="empty-state">Personne n\'a encore voté 🎵</div>';
 }
 
+// ══════════════════════════════════════
+//  AFFINITÉS
+// ══════════════════════════════════════
+
+function renderCompat() {
+  const list = document.getElementById('compat-list');
+  const me = state.currentUser;
+  const others = state.users.filter(u => u !== me);
+
+  if (others.length === 0) {
+    list.innerHTML = '<div class="empty-state">Pas encore d\'autres participants 👥</div>';
+    return;
+  }
+
+  const myVotes = Object.keys(state.votes)
+    .filter(k => k.startsWith(me + ':'))
+    .reduce((acc, k) => { acc[k.split(':')[1]] = state.votes[k]; return acc; }, {});
+
+  const myIds = Object.keys(myVotes).map(Number);
+
+  if (myIds.length === 0) {
+    list.innerHTML = '<div class="empty-state">Vote d\'abord des concerts pour voir tes affinités !</div>';
+    return;
+  }
+
+  const scores = others.map(u => {
+    const theirVotes = Object.keys(state.votes)
+      .filter(k => k.startsWith(u + ':'))
+      .reduce((acc, k) => { acc[k.split(':')[1]] = state.votes[k]; return acc; }, {});
+
+    const theirIds = Object.keys(theirVotes).map(Number);
+    const commonIds = myIds.filter(id => theirIds.includes(id));
+
+    // Score: both voted same = 3pts, different level = 1pt
+    let score = 0;
+    let commonArtists = [];
+    commonIds.forEach(id => {
+      const myLvl = myVotes[id];
+      const theirLvl = theirVotes[id];
+      if (myLvl === theirLvl) score += 3;
+      else score += 1;
+      const slot = TIMETABLE.find(s => s.id === id);
+      if (slot) commonArtists.push({ slot, myLvl, theirLvl });
+    });
+
+    const maxScore = myIds.length * 3;
+    const pct = maxScore > 0 ? Math.round((score / maxScore) * 100) : 0;
+    return { user: u, score, pct, commonArtists };
+  }).sort((a, b) => b.pct - a.pct);
+
+  const COMPAT_EMOJIS = ['🔥', '😍', '👌', '🤝', '😐', '🤷'];
+  const getEmoji = pct => pct >= 80 ? '🔥' : pct >= 60 ? '😍' : pct >= 40 ? '👌' : pct >= 20 ? '🤝' : '😐';
+
+  list.innerHTML = scores.map(({ user, pct, commonArtists }) => {
+    const emoji = getEmoji(pct);
+    const topCommon = commonArtists
+      .filter(a => a.myLvl === 1 && a.theirLvl === 1)
+      .slice(0, 3)
+      .map(a => `<span class="compat-artist">${a.slot.name}</span>`)
+      .join('');
+
+    return `<div class="compat-row">
+      <div class="compat-avatar">${user[0].toUpperCase()}</div>
+      <div class="compat-info">
+        <div class="compat-name">${user} <span class="compat-emoji">${emoji}</span></div>
+        <div class="compat-bar-wrap">
+          <div class="compat-bar" style="width:${pct}%"></div>
+          <span class="compat-pct">${pct}%</span>
+        </div>
+        ${topCommon ? `<div class="compat-common">🔥 En commun: ${topCommon}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
 // --- Particles ---
 function initParticles() {
   const c = document.getElementById('particles');
@@ -517,11 +731,6 @@ function initParticles() {
     c.appendChild(d);
   }
 }
-
-// --- Init ---
-initParticles();
-window.addEventListener('load', () => {});
-loadVotes().then(() => { renderUserList(); showScreen('login'); });
 
 // --- Photo Lightbox ---
 function openPhotoLightbox(src) {
@@ -543,4 +752,19 @@ function patchPhotoFrames() {
     img.onclick = function(e) { e.stopPropagation(); openPhotoLightbox(img.src); };
   });
 }
-setTimeout(patchPhotoFrames, 800);
+
+// --- Init ---
+initParticles();
+showLoader(true);
+loadVotes().then(() => {
+  showLoader(false);
+  renderUserList();
+  // Auto-login from URL param
+  const urlUser = new URL(window.location).searchParams.get('user');
+  if (urlUser && state.users.includes(urlUser)) {
+    selectUser(urlUser);
+  } else {
+    showScreen('login');
+  }
+  setTimeout(patchPhotoFrames, 800);
+});
