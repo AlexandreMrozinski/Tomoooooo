@@ -234,45 +234,59 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 .photo-strip {
   position: fixed;
   bottom: 0; left: 0; right: 0;
-  height: 90px;
+  height: 100px;
   overflow: hidden;
   z-index: 200;
-  background: linear-gradient(to top, rgba(10,10,18,0.95) 0%, rgba(10,10,18,0.6) 100%);
-  border-top: 1px solid rgba(255,255,255,0.08);
-  mask-image: linear-gradient(to right, transparent 0%, black 5%, black 95%, transparent 100%);
-  -webkit-mask-image: linear-gradient(to right, transparent 0%, black 5%, black 95%, transparent 100%);
+  background: linear-gradient(to top, rgba(10,10,18,1) 0%, rgba(10,10,18,0.5) 100%);
+  border-top: 1px solid rgba(255,255,255,0.06);
 }
+.photo-strip::before, .photo-strip::after {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 80px;
+  z-index: 2;
+  pointer-events: none;
+}
+.photo-strip::before { left: 0; background: linear-gradient(to right, rgba(10,10,18,1), transparent); }
+.photo-strip::after  { right: 0; background: linear-gradient(to left, rgba(10,10,18,1), transparent); }
+
 .photo-track {
   display: flex;
-  gap: 8px;
-  padding: 8px;
-  animation: scroll-photos 30s linear infinite;
+  gap: 10px;
+  padding: 10px 0;
   width: max-content;
+  animation: scroll-photos 40s linear infinite;
 }
 .photo-track:hover { animation-play-state: paused; }
+
 @keyframes scroll-photos {
   0%   { transform: translateX(0); }
-  100% { transform: translateX(-50%); }
+  100% { transform: translateX(-25%); }
 }
+
 .photo-frame {
-  height: 74px;
+  height: 78px;
   width: auto;
-  border-radius: 8px;
+  border-radius: 10px;
   object-fit: cover;
-  border: 2px solid rgba(255,255,255,0.1);
-  transition: transform 0.2s, border-color 0.2s;
+  border: 2px solid rgba(255,255,255,0.08);
+  transition: transform 0.25s ease, border-color 0.25s, box-shadow 0.25s;
   cursor: pointer;
   flex-shrink: 0;
+  display: block;
 }
 .photo-frame:hover {
-  transform: scale(1.08) translateY(-4px);
+  transform: scale(1.12) translateY(-6px);
   border-color: var(--accent2);
+  box-shadow: 0 8px 24px rgba(192,110,255,0.4);
   z-index: 5;
+  position: relative;
 }
 
 /* Push content up so strip doesn't cover it */
-#screen-vote { padding-bottom: 90px; }
-#screen-login { padding-bottom: 90px; }
+#screen-vote { padding-bottom: 100px; }
+#screen-login { padding-bottom: 100px; }
 
 /* ── SCROLLBAR ── */
 ::-webkit-scrollbar { width: 8px; height: 12px; }

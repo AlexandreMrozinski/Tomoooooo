@@ -134,7 +134,7 @@
     strip.className = 'photo-strip';
     var track = document.createElement('div');
     track.className = 'photo-track';
-    var all = photos.concat(photos);
+    var all = photos.concat(photos).concat(photos).concat(photos);
     track.innerHTML = all.map(function(src){ return '<img class="photo-frame" src="' + src + '" />'; }).join('');
     strip.appendChild(track);
     document.body.appendChild(strip);
