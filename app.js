@@ -45,6 +45,7 @@ async function loadVotes() {
     state.votes = {};
     if (Array.isArray(rows)) {
       rows.forEach(r => {
+        if (!r.user_name || !r.artist_id) return;
         state.votes[`${r.user_name}:${r.artist_id}`] = r.vote_level;
         if (!state.users.includes(r.user_name)) { state.users.push(r.user_name); saveUsers(); }
       });
@@ -156,11 +157,16 @@ let pollingInterval = null;
 function startPolling() {
   stopPolling();
   pollingInterval = setInterval(async () => {
+    const prevVotes = JSON.stringify(state.votes);
     await loadVotes();
-    if (state.currentView === 'timetable') renderTimetable();
-    else renderResults();
-    renderParticipantChips();
-  }, 10000);
+    const newVotes = JSON.stringify(state.votes);
+    // Only re-render if votes actually changed
+    if (prevVotes !== newVotes) {
+      if (state.currentView === 'timetable') renderTimetable();
+      else renderResults();
+      renderParticipantChips();
+    }
+  }, 15000);
 }
 function stopPolling() { if (pollingInterval) { clearInterval(pollingInterval); pollingInterval = null; } }
 
@@ -504,3 +510,25 @@ function initParticles() {
 initParticles();
 window.addEventListener('load', () => {});
 loadVotes().then(() => { renderUserList(); showScreen('login'); });
+
+// --- Photo Lightbox ---
+function openPhotoLightbox(src) {
+  let lb = document.getElementById('photo-lightbox');
+  if (!lb) {
+    lb = document.createElement('div');
+    lb.id = 'photo-lightbox';
+    lb.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:9998;display:flex;align-items:center;justify-content:center;cursor:zoom-out;backdrop-filter:blur(6px);';
+    document.body.appendChild(lb);
+  }
+  lb.innerHTML = '<img src="' + src + '" style="max-width:92vw;max-height:88vh;border-radius:12px;box-shadow:0 0 60px rgba(0,0,0,0.8);object-fit:contain;" />';
+  lb.style.display = 'flex';
+  lb.onclick = () => { lb.style.display = 'none'; };
+}
+
+function patchPhotoFrames() {
+  document.querySelectorAll('.photo-frame').forEach(function(img) {
+    img.style.cursor = 'zoom-in';
+    img.onclick = function(e) { e.stopPropagation(); openPhotoLightbox(img.src); };
+  });
+}
+setTimeout(patchPhotoFrames, 800);
