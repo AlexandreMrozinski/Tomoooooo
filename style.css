@@ -260,7 +260,7 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 
 @keyframes scroll-photos {
   0%   { transform: translateX(0); }
-  100% { transform: translateX(-25%); }
+  100% { transform: translateX(-50%); }
 }
 
 .photo-frame {
