@@ -723,19 +723,33 @@ function renderCompat() {
 
 // --- Tooltip positioning ---
 (function() {
-  document.addEventListener('mousemove', function(e) {
-    const tip = document.querySelector('.rt-slot.voted:hover .rt-tooltip');
+  let activeTip = null;
+
+  document.addEventListener('mouseover', function(e) {
+    const slot = e.target.closest('.rt-slot.voted');
+    if (!slot) return;
+    const tip = slot.querySelector('.rt-tooltip');
     if (!tip) return;
-    const TW = 240, TH = 160, PAD = 12;
-    let x = e.clientX + 14;
+    activeTip = tip;
+  });
+
+  document.addEventListener('mouseout', function(e) {
+    const slot = e.target.closest('.rt-slot.voted');
+    if (slot && !slot.contains(e.relatedTarget)) {
+      activeTip = null;
+    }
+  });
+
+  document.addEventListener('mousemove', function(e) {
+    if (!activeTip) return;
+    const TW = 240, TH = 180, PAD = 12;
+    let x = e.clientX + 16;
     let y = e.clientY - TH / 2;
-    // Flip left if too close to right edge
-    if (x + TW > window.innerWidth - PAD) x = e.clientX - TW - 14;
-    // Clamp vertically
+    if (x + TW > window.innerWidth - PAD) x = e.clientX - TW - 16;
     if (y < PAD) y = PAD;
     if (y + TH > window.innerHeight - PAD) y = window.innerHeight - TH - PAD;
-    tip.style.left = x + 'px';
-    tip.style.top = y + 'px';
+    activeTip.style.left = x + 'px';
+    activeTip.style.top = y + 'px';
   });
 })();
 
@@ -891,138 +905,6 @@ function resizeImage(file, maxHeight, quality) {
   });
 }
 
-// --- User Photos (Supabase) ---
-async function loadUserPhotos() {
-  try {
-    const rows = await db.get('photos?select=user_name,photo_data,created_at&order=created_at.asc');
-    if (!Array.isArray(rows) || !rows.length) return;
-    const track = document.getElementById('photo-track');
-    if (!track) return;
-
-    // Remove old user photos (keep static ones)
-    track.querySelectorAll('.user-photo').forEach(el => el.remove());
-
-    // Add user photos interleaved
-    rows.forEach(r => {
-      const img = document.createElement('img');
-      img.className = 'photo-frame user-photo';
-      img.src = r.photo_data;
-      img.title = r.user_name;
-      img.style.cursor = 'zoom-in';
-      img.onclick = (e) => { e.stopPropagation(); openPhotoLightbox(img.src, r.user_name); };
-      track.appendChild(img);
-    });
-
-    patchPhotoFrames();
-  } catch(e) { console.error('loadUserPhotos error', e); }
-}
-
-async function uploadUserPhoto(file) {
-  if (!state.currentUser) {
-    alert("Connecte-toi d'abord !");
-    return;
-  }
-
-  // Show loading state on button
-  const btn = document.querySelector('.photo-add-btn');
-  if (btn) { btn.innerHTML = '⏳'; btn.disabled = true; }
-
-  try {
-    // Resize & compress to max 800px, quality 0.7
-    const canvas = document.createElement('canvas');
-    const img = new Image();
-    await new Promise((res, rej) => {
-      img.onload = res; img.onerror = rej;
-      img.src = URL.createObjectURL(file);
-    });
-
-    const MAX = 800;
-    let w = img.width, h = img.height;
-    if (w > h && w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
-    else if (h > MAX) { w = Math.round(w * MAX / h); h = MAX; }
-    canvas.width = w; canvas.height = h;
-    canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-    const base64 = canvas.toDataURL('image/jpeg', 0.7);
-
-    // Save to Supabase
-    await db.post('photos', { user_name: state.currentUser, photo_data: base64 });
-
-    // Reload photos
-    await loadUserPhotos();
-  } catch(e) {
-    console.error('Upload error', e);
-    alert("Erreur lors de l'upload 😕");
-  } finally {
-    if (btn) { btn.innerHTML = '📷'; btn.disabled = false; }
-  }
-}
-
-// --- Photo Lightbox ---// --- User Photos (Supabase) ---
-async function loadUserPhotos() {
-  try {
-    const rows = await db.get('photos?select=user_name,photo_data,created_at&order=created_at.asc');
-    if (!Array.isArray(rows) || !rows.length) return;
-    const track = document.getElementById('photo-track');
-    if (!track) return;
-
-    // Remove old user photos (keep static ones)
-    track.querySelectorAll('.user-photo').forEach(el => el.remove());
-
-    // Add user photos interleaved
-    rows.forEach(r => {
-      const img = document.createElement('img');
-      img.className = 'photo-frame user-photo';
-      img.src = r.photo_data;
-      img.title = r.user_name;
-      img.style.cursor = 'zoom-in';
-      img.onclick = (e) => { e.stopPropagation(); openPhotoLightbox(img.src, r.user_name); };
-      track.appendChild(img);
-    });
-
-    patchPhotoFrames();
-  } catch(e) { console.error('loadUserPhotos error', e); }
-}
-
-async function uploadUserPhoto(file) {
-  if (!state.currentUser) {
-    alert("Connecte-toi d'abord !");
-    return;
-  }
-
-  // Show loading state on button
-  const btn = document.querySelector('.photo-add-btn');
-  if (btn) { btn.innerHTML = '⏳'; btn.disabled = true; }
-
-  try {
-    // Resize & compress to max 800px, quality 0.7
-    const canvas = document.createElement('canvas');
-    const img = new Image();
-    await new Promise((res, rej) => {
-      img.onload = res; img.onerror = rej;
-      img.src = URL.createObjectURL(file);
-    });
-
-    const MAX = 800;
-    let w = img.width, h = img.height;
-    if (w > h && w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
-    else if (h > MAX) { w = Math.round(w * MAX / h); h = MAX; }
-    canvas.width = w; canvas.height = h;
-    canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-    const base64 = canvas.toDataURL('image/jpeg', 0.7);
-
-    // Save to Supabase
-    await db.post('photos', { user_name: state.currentUser, photo_data: base64 });
-
-    // Reload photos
-    await loadUserPhotos();
-  } catch(e) {
-    console.error('Upload error', e);
-    alert("Erreur lors de l'upload 😕");
-  } finally {
-    if (btn) { btn.innerHTML = '📷'; btn.disabled = false; }
-  }
-}
-
 // --- Photo Lightbox ---
 function openPhotoLightbox(src, photoId, uploaderName) {
   let lb = document.getElementById('photo-lightbox');
@@ -1083,3 +965,6 @@ Promise.all([loadVotes(), loadCommunityPhotos()]).then(() => {
   }
   setTimeout(patchPhotoFrames, 800);
 });
+
+// Reload community photos every 30s
+setInterval(loadCommunityPhotos, 30000);
