@@ -181,20 +181,32 @@ async function resetDay(day) {
   closeReset();
   showLoader(true);
   try {
-    // Get artist IDs for this day (or all)
-    const artistIds = day === 'all'
-      ? TIMETABLE.map(s => s.id)
-      : TIMETABLE.filter(s => s.day === day).map(s => s.id);
-
-    // Delete from Supabase
-    const idsStr = artistIds.join(',');
-    await db.delete(`votes?user_name=eq.${encodeURIComponent(state.currentUser)}&artist_id=in.(${idsStr})`);
-
-    // Update local state
-    artistIds.forEach(id => {
-      delete state.votes[`${state.currentUser}:${id}`];
-    });
-
+    if (day === 'all') {
+      // Delete all votes for this user
+      await db.delete(`votes?user_name=eq.${encodeURIComponent(state.currentUser)}`);
+      // Clear local state
+      Object.keys(state.votes).forEach(k => {
+        if (k.startsWith(state.currentUser + ':')) delete state.votes[k];
+      });
+    } else {
+      // Get artist IDs for this day from current TIMETABLE
+      const artistIds = TIMETABLE.filter(s => s.day === day).map(s => s.id);
+      const idsStr = artistIds.join(',');
+      // Also delete any orphan votes not in current timetable by fetching user votes first
+      const userVotes = await db.get(`votes?user_name=eq.${encodeURIComponent(state.currentUser)}&select=artist_id`);
+      if (Array.isArray(userVotes) && userVotes.length) {
+        // Get all artist_ids that belong to this day (from DB perspective, check against TIMETABLE day)
+        const dayArtistIds = TIMETABLE.filter(s => s.day === day).map(s => s.id);
+        const toDelete = userVotes.map(v => v.artist_id).filter(id => dayArtistIds.includes(id));
+        if (toDelete.length) {
+          await db.delete(`votes?user_name=eq.${encodeURIComponent(state.currentUser)}&artist_id=in.(${toDelete.join(',')})`);
+        }
+      }
+      // Clear local state for this day
+      artistIds.forEach(id => {
+        delete state.votes[`${state.currentUser}:${id}`];
+      });
+    }
     renderTimetable();
     renderParticipantChips();
   } catch(e) { console.error(e); }
