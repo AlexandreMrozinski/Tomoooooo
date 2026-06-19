@@ -136,31 +136,11 @@
   (function() {
     var photos = ['p1.jpg','p2.jpg','p3.jpg','p4.jpg','p5.jpg','p6.jpg'];
     var strip = document.createElement('div');
-    strip.id = 'photo-strip';
     strip.className = 'photo-strip';
-
-    // Add photo button
-    var addBtn = document.createElement('button');
-    addBtn.className = 'photo-add-btn';
-    addBtn.innerHTML = '📷';
-    addBtn.title = 'Ajouter une photo';
-    addBtn.onclick = function() { document.getElementById('photo-upload-input').click(); };
-    strip.appendChild(addBtn);
-
-    // Hidden file input
-    var input = document.createElement('input');
-    input.type = 'file';
-    input.id = 'photo-upload-input';
-    input.accept = 'image/*';
-    input.style.display = 'none';
-    input.onchange = function(e) { handlePhotoUpload(e.target.files[0]); input.value=''; };
-    strip.appendChild(input);
-
     var track = document.createElement('div');
-    track.id = 'photo-track';
     track.className = 'photo-track';
-    var all = photos.concat(photos);
-    track.innerHTML = all.map(function(src){ return '<img class="photo-frame static-photo" src="' + src + '" />'; }).join('');
+    var all = photos.concat(photos).concat(photos).concat(photos);
+    track.innerHTML = all.map(function(src){ return '<img class="photo-frame" src="' + src + '" />'; }).join('');
     strip.appendChild(track);
     document.body.appendChild(strip);
   })();
