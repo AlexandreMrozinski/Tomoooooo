@@ -58,8 +58,8 @@ async function loadVotes() {
   } catch(e) { console.error(e); }
 }
 
-function getMyVote(artistId) { return state.votes[`${state.currentUser}:${artistId}`] || null; }
-function getMyComment(artistId) { return state.comments[`${state.currentUser}:${artistId}`] || ''; }
+function getMyVote(artistId) { if (!state.currentUser) return null; return state.votes[`${state.currentUser}:${artistId}`] || null; }
+function getMyComment(artistId) { if (!state.currentUser) return ''; return state.comments[`${state.currentUser}:${artistId}`] || ''; }
 
 function getVotersForArtist(artistId) {
   const result = { 1: [], 2: [], 3: [] };
@@ -84,6 +84,7 @@ function getVoteCount(userName) {
 
 // Detect conflicts: slots that overlap with other voted slots for current user
 function getMyConflicts() {
+  if (!state.currentUser) return new Set();
   const myVotedIds = Object.keys(state.votes)
     .filter(k => k.startsWith(state.currentUser + ':') && k.length > state.currentUser.length + 1)
     .map(k => parseInt(k.split(':')[1]))
@@ -850,7 +851,7 @@ function renderPhotoStrip() {
 async function handlePhotoUpload(file) {
   if (!file) return;
   if (!state.currentUser) {
-    alert('Connecte-toi d'abord !');
+    alert("Connecte-toi d'abord !");
     return;
   }
 
@@ -862,7 +863,7 @@ async function handlePhotoUpload(file) {
     await loadCommunityPhotos();
   } catch(e) {
     console.error('upload error', e);
-    alert('Erreur lors de l'upload 😕');
+    alert("Erreur lors de l'upload 😕");
   }
   showLoader(false);
 }
@@ -918,7 +919,7 @@ async function loadUserPhotos() {
 
 async function uploadUserPhoto(file) {
   if (!state.currentUser) {
-    alert('Connecte-toi d'abord !');
+    alert("Connecte-toi d'abord !");
     return;
   }
 
@@ -950,7 +951,7 @@ async function uploadUserPhoto(file) {
     await loadUserPhotos();
   } catch(e) {
     console.error('Upload error', e);
-    alert('Erreur lors de l'upload 😕');
+    alert("Erreur lors de l'upload 😕");
   } finally {
     if (btn) { btn.innerHTML = '📷'; btn.disabled = false; }
   }
@@ -984,7 +985,7 @@ async function loadUserPhotos() {
 
 async function uploadUserPhoto(file) {
   if (!state.currentUser) {
-    alert('Connecte-toi d'abord !');
+    alert("Connecte-toi d'abord !");
     return;
   }
 
@@ -1016,7 +1017,7 @@ async function uploadUserPhoto(file) {
     await loadUserPhotos();
   } catch(e) {
     console.error('Upload error', e);
-    alert('Erreur lors de l'upload 😕');
+    alert("Erreur lors de l'upload 😕");
   } finally {
     if (btn) { btn.innerHTML = '📷'; btn.disabled = false; }
   }
