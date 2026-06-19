@@ -117,7 +117,8 @@ function renderUserList() {
     return;
   }
   el.innerHTML = state.users.map(u => {
-    const count = Object.keys(state.votes).filter(k => k.startsWith(u+':')).length;
+    const prefix = u + ':';
+    const count = Object.keys(state.votes).filter(k => k.startsWith(prefix) && k.length > prefix.length).length;
     return `<button class="user-btn" onclick="selectUser('${u}')">
       <span class="user-avatar">${u[0].toUpperCase()}</span>
       <span class="user-name">${u}</span>
@@ -367,7 +368,8 @@ function renderParticipantChips() {
   const el = document.getElementById('participant-chips');
   if (!el) return;
   el.innerHTML = state.users.map(u => {
-    const count = Object.keys(state.votes).filter(k => k.startsWith(u+':')).length;
+    const prefix = u + ':';
+    const count = Object.keys(state.votes).filter(k => k.startsWith(prefix) && k.length > prefix.length).length;
     return `<span class="p-chip ${u === state.currentUser ? 'me' : ''}">${u} · ${count}</span>`;
   }).join('');
 }
