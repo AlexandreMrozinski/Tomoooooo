@@ -720,6 +720,24 @@ function renderCompat() {
   }).join('');
 }
 
+// --- Tooltip positioning ---
+(function() {
+  document.addEventListener('mousemove', function(e) {
+    const tip = document.querySelector('.rt-slot.voted:hover .rt-tooltip');
+    if (!tip) return;
+    const TW = 240, TH = 160, PAD = 12;
+    let x = e.clientX + 14;
+    let y = e.clientY - TH / 2;
+    // Flip left if too close to right edge
+    if (x + TW > window.innerWidth - PAD) x = e.clientX - TW - 14;
+    // Clamp vertically
+    if (y < PAD) y = PAD;
+    if (y + TH > window.innerHeight - PAD) y = window.innerHeight - TH - PAD;
+    tip.style.left = x + 'px';
+    tip.style.top = y + 'px';
+  });
+})();
+
 // --- Export PDF ---
 function exportPDF() {
   const conflicts = getMyConflicts();
@@ -790,18 +808,256 @@ function initParticles() {
   }
 }
 
+// --- Community Photos ---
+let communityPhotos = []; // { id, user_name, photo_data }
+
+async function loadCommunityPhotos() {
+  try {
+    const rows = await db.get('photos?select=id,user_name,photo_data&order=created_at.desc&limit=50');
+    if (Array.isArray(rows)) {
+      communityPhotos = rows;
+      renderPhotoStrip();
+    }
+  } catch(e) { console.error('photos load error', e); }
+}
+
+function renderPhotoStrip() {
+  const track = document.getElementById('photo-track');
+  if (!track) return;
+
+  // Static crew photos + community photos
+  const staticPhotos = ['p1.jpg','p2.jpg','p3.jpg','p4.jpg','p5.jpg','p6.jpg'];
+  const communityImgs = communityPhotos.map(p =>
+    `<img class="photo-frame community-photo" src="${p.photo_data}"
+      title="Photo de ${p.user_name}"
+      onclick="openPhotoLightbox('${p.photo_data}', '${p.id}', '${p.user_name}')" />`
+  ).join('');
+
+  const all = [...staticPhotos, ...staticPhotos, ...staticPhotos, ...staticPhotos];
+  const staticImgs = all.map(src =>
+    `<img class="photo-frame static-photo" src="${src}" />`
+  ).join('');
+
+  track.innerHTML = communityImgs + staticImgs;
+
+  // Re-patch static photo lightbox
+  track.querySelectorAll('.static-photo').forEach(img => {
+    img.style.cursor = 'zoom-in';
+    img.onclick = (e) => { e.stopPropagation(); openPhotoLightbox(img.src, null, null); };
+  });
+}
+
+async function handlePhotoUpload(file) {
+  if (!file) return;
+  if (!state.currentUser) {
+    alert('Connecte-toi d'abord !');
+    return;
+  }
+
+  showLoader(true);
+  try {
+    // Resize & compress
+    const base64 = await resizeImage(file, 400, 0.75);
+    await db.post('photos', { user_name: state.currentUser, photo_data: base64 });
+    await loadCommunityPhotos();
+  } catch(e) {
+    console.error('upload error', e);
+    alert('Erreur lors de l'upload 😕');
+  }
+  showLoader(false);
+}
+
+function resizeImage(file, maxHeight, quality) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const ratio = maxHeight / img.height;
+        const w = Math.round(img.width * ratio);
+        const h = maxHeight;
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// --- User Photos (Supabase) ---
+async function loadUserPhotos() {
+  try {
+    const rows = await db.get('photos?select=user_name,photo_data,created_at&order=created_at.asc');
+    if (!Array.isArray(rows) || !rows.length) return;
+    const track = document.getElementById('photo-track');
+    if (!track) return;
+
+    // Remove old user photos (keep static ones)
+    track.querySelectorAll('.user-photo').forEach(el => el.remove());
+
+    // Add user photos interleaved
+    rows.forEach(r => {
+      const img = document.createElement('img');
+      img.className = 'photo-frame user-photo';
+      img.src = r.photo_data;
+      img.title = r.user_name;
+      img.style.cursor = 'zoom-in';
+      img.onclick = (e) => { e.stopPropagation(); openPhotoLightbox(img.src, r.user_name); };
+      track.appendChild(img);
+    });
+
+    patchPhotoFrames();
+  } catch(e) { console.error('loadUserPhotos error', e); }
+}
+
+async function uploadUserPhoto(file) {
+  if (!state.currentUser) {
+    alert('Connecte-toi d'abord !');
+    return;
+  }
+
+  // Show loading state on button
+  const btn = document.querySelector('.photo-add-btn');
+  if (btn) { btn.innerHTML = '⏳'; btn.disabled = true; }
+
+  try {
+    // Resize & compress to max 800px, quality 0.7
+    const canvas = document.createElement('canvas');
+    const img = new Image();
+    await new Promise((res, rej) => {
+      img.onload = res; img.onerror = rej;
+      img.src = URL.createObjectURL(file);
+    });
+
+    const MAX = 800;
+    let w = img.width, h = img.height;
+    if (w > h && w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
+    else if (h > MAX) { w = Math.round(w * MAX / h); h = MAX; }
+    canvas.width = w; canvas.height = h;
+    canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+    const base64 = canvas.toDataURL('image/jpeg', 0.7);
+
+    // Save to Supabase
+    await db.post('photos', { user_name: state.currentUser, photo_data: base64 });
+
+    // Reload photos
+    await loadUserPhotos();
+  } catch(e) {
+    console.error('Upload error', e);
+    alert('Erreur lors de l'upload 😕');
+  } finally {
+    if (btn) { btn.innerHTML = '📷'; btn.disabled = false; }
+  }
+}
+
+// --- Photo Lightbox ---// --- User Photos (Supabase) ---
+async function loadUserPhotos() {
+  try {
+    const rows = await db.get('photos?select=user_name,photo_data,created_at&order=created_at.asc');
+    if (!Array.isArray(rows) || !rows.length) return;
+    const track = document.getElementById('photo-track');
+    if (!track) return;
+
+    // Remove old user photos (keep static ones)
+    track.querySelectorAll('.user-photo').forEach(el => el.remove());
+
+    // Add user photos interleaved
+    rows.forEach(r => {
+      const img = document.createElement('img');
+      img.className = 'photo-frame user-photo';
+      img.src = r.photo_data;
+      img.title = r.user_name;
+      img.style.cursor = 'zoom-in';
+      img.onclick = (e) => { e.stopPropagation(); openPhotoLightbox(img.src, r.user_name); };
+      track.appendChild(img);
+    });
+
+    patchPhotoFrames();
+  } catch(e) { console.error('loadUserPhotos error', e); }
+}
+
+async function uploadUserPhoto(file) {
+  if (!state.currentUser) {
+    alert('Connecte-toi d'abord !');
+    return;
+  }
+
+  // Show loading state on button
+  const btn = document.querySelector('.photo-add-btn');
+  if (btn) { btn.innerHTML = '⏳'; btn.disabled = true; }
+
+  try {
+    // Resize & compress to max 800px, quality 0.7
+    const canvas = document.createElement('canvas');
+    const img = new Image();
+    await new Promise((res, rej) => {
+      img.onload = res; img.onerror = rej;
+      img.src = URL.createObjectURL(file);
+    });
+
+    const MAX = 800;
+    let w = img.width, h = img.height;
+    if (w > h && w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
+    else if (h > MAX) { w = Math.round(w * MAX / h); h = MAX; }
+    canvas.width = w; canvas.height = h;
+    canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+    const base64 = canvas.toDataURL('image/jpeg', 0.7);
+
+    // Save to Supabase
+    await db.post('photos', { user_name: state.currentUser, photo_data: base64 });
+
+    // Reload photos
+    await loadUserPhotos();
+  } catch(e) {
+    console.error('Upload error', e);
+    alert('Erreur lors de l'upload 😕');
+  } finally {
+    if (btn) { btn.innerHTML = '📷'; btn.disabled = false; }
+  }
+}
+
 // --- Photo Lightbox ---
-function openPhotoLightbox(src) {
+function openPhotoLightbox(src, photoId, uploaderName) {
   let lb = document.getElementById('photo-lightbox');
   if (!lb) {
     lb = document.createElement('div');
     lb.id = 'photo-lightbox';
-    lb.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:9998;display:flex;align-items:center;justify-content:center;cursor:zoom-out;backdrop-filter:blur(6px);';
+    lb.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:9998;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;cursor:zoom-out;backdrop-filter:blur(6px);';
     document.body.appendChild(lb);
   }
-  lb.innerHTML = '<img src="' + src + '" style="max-width:92vw;max-height:88vh;border-radius:12px;box-shadow:0 0 60px rgba(0,0,0,0.8);object-fit:contain;" />';
+
+  const canDelete = photoId && uploaderName && uploaderName === state.currentUser;
+  const byLine = uploaderName ? `<div style="color:rgba(255,255,255,0.6);font-size:13px;font-family:'Space Grotesk',sans-serif;">📸 Photo de <strong style="color:white">${uploaderName}</strong></div>` : '';
+  const deleteBtn = canDelete
+    ? `<button onclick="deleteCommunityPhoto('${photoId}')" style="background:#E74C3C;border:none;border-radius:8px;padding:8px 18px;color:white;font-family:'Space Grotesk',sans-serif;font-size:13px;font-weight:600;cursor:pointer;">🗑 Supprimer ma photo</button>`
+    : '';
+
+  lb.innerHTML = `
+    <img src="${src}" style="max-width:88vw;max-height:78vh;border-radius:12px;box-shadow:0 0 60px rgba(0,0,0,0.8);object-fit:contain;" />
+    ${byLine}
+    <div style="display:flex;gap:10px;align-items:center;">
+      ${deleteBtn}
+      <button onclick="document.getElementById('photo-lightbox').style.display='none'" style="background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:8px;padding:8px 18px;color:white;font-family:'Space Grotesk',sans-serif;font-size:13px;cursor:pointer;">Fermer</button>
+    </div>`;
   lb.style.display = 'flex';
-  lb.onclick = () => { lb.style.display = 'none'; };
+  lb.onclick = (e) => { if (e.target === lb) lb.style.display = 'none'; };
+}
+
+async function deleteCommunityPhoto(photoId) {
+  if (!confirm('Supprimer cette photo ?')) return;
+  showLoader(true);
+  try {
+    await db.delete(`photos?id=eq.${photoId}&user_name=eq.${encodeURIComponent(state.currentUser)}`);
+    document.getElementById('photo-lightbox').style.display = 'none';
+    await loadCommunityPhotos();
+  } catch(e) { console.error(e); }
+  showLoader(false);
 }
 
 function patchPhotoFrames() {
@@ -814,7 +1070,7 @@ function patchPhotoFrames() {
 // --- Init ---
 initParticles();
 showLoader(true);
-loadVotes().then(() => {
+Promise.all([loadVotes(), loadCommunityPhotos()]).then(() => {
   showLoader(false);
   renderUserList();
   // Auto-login from URL param
